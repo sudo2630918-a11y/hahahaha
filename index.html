@@ -1,0 +1,57 @@
+from sklearn.model_selection import GridSearchcV
+# 하이퍼 파라미터 그리드 정의
+param_grid = {
+'nestimators': 150,
+100, 2001,
+'max_depth': [None,
+10, 20, 30.
+'min_samples_split': [2, 5, 10],
+'min_samples_leaf': [1, 2, 4]
+# 그리드 서치 수행
+grid_search = GridSearchCVC
+RandomForestRegressor (random_state=42), param_grid-param_grid, cv=5,
+scoring='neg_mean_squared_error', n_jobs=-1
+)
+grid_search.fit(X_train_scaled, y_train)
+# 최적 파라미터 플럭
+print("최적 파라미터:", grid_search.best_params_)
+# 최적 모델로 예속
+best_model
+= grid_search.best_estimator-
+Y_pred_best = best_model.predict(X_test_scaled)
+# 성능 평가
+rmse_best = np.sqrt mean_squared_error(y_test, y_pred_best))
+r2_best = r2_score(y_test, y_pred_best)
+print(+최적화 모델 RMSE: trmse_best:.2f}')
+print(f'최적화 모델 R-squared: tr2_best:.2f}
+
+#도요질환 사항자 수 생성 (환자 수와 상황관계, 매우 높은 기록에서 증가)
+nundeath = np.zeros(Len(date_range))
+for 1 in range(Len(date_range)) :
+death_prob = 0
+if temp_base[i] > 33:
+death_prob = 0.08
+elif temp_base[i] > 30:
+death_prob = 0.03
+elif temp_base[i] > 28:
+death_prob = 0.01
+else:
+death_prob = 0.002
+numdeath[i] = np.random.binomial(int(numpatient[i]), death_prob)
+# 데이터프레임 생성
+summer_df
+= pd.DataFrame ({
+'Date': date_range, 1': temp_base.
+# 기온
+11' : humidity-base, # 습도
+'WBGT': WBGT, # 일지수
+'month' : month,
+'day': daya
+'numpatient': numpatient,
+'numdeath': numdeat
+子）
+# 2. 상관관계 분석
+print("살과관계 분석 중...")
+correlation_matrix = summer df[['1', '11', 'WBGT'.
+'month', "day', 'numpatient',
+
