@@ -1,215 +1,49 @@
-cd /home/claude/webapp && cat > merge_all.py << 'EOF'
-import os
-import re
-import csv
-import json
-import datetime
+cd /home/claude/webapp && python3 -c "
+import os, re, csv, json, datetime
 
-# 설정
 BASE_DIR = '/home/claude/webapp'
-START_MONTH_DAY = (5, 15)  # 5월 15일
-END_MONTH_DAY = (7, 15)    # 7월 15일
-
-# 데이터 저장을 위한 마스터 맵: { 'YYYY-MM-DD': { ... } }
 merged_data = {}
-
-# 날짜 패턴 (YYYY-MM-DD)
 date_re = re.compile(r'^(\d{4}-\d{2}-\d{2})$')
 
 def init_date(date_str):
     if date_str not in merged_data:
         dt = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
         merged_data[date_str] = {
-            'date': date_str,
-            'year': dt.year,
-            'avg_temp': None,
-            'min_temp': None,
-            'max_temp': None,
-            'rh': None,         # 상대습도
-            'seoul_cases': 0,   # 온열질환자 수
-            'seoul_deaths': 0   # 사망자 수
+            'date': date_str, 'year': dt.year,
+            'avg_temp': None, 'min_temp': None, 'max_temp': None,
+            'rh': None, 'seoul_cases': 0, 'seoul_deaths': 0
         }
 
 def read_tsv_file(filename):
-    """기상청 기온/습도 XLS(실제로는 TSV) 파일을 읽어 줄 단위 리스트 반환"""
     path = os.path.join(BASE_DIR, filename)
     if not os.path.exists(path):
-        print(f"[경고] 파일이 존재하지 않습니다: {filename}")
         return []
-    
-    # cp949로 읽고 실패 시 euc-kr로 디코딩
     try:
         with open(path, 'r', encoding='cp949', errors='ignore') as f:
-            lines = f.read().splitlines()
+            return f.read().splitlines()
     except Exception:
-        with open(path, 'r', encoding='euc-kr', errors='ignore') as f:
-            lines = f.read().splitlines()
-    return lines
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            return f.read().splitlines()
 
-# ==========================================
-# 1. 기온 데이터 파싱 (*기온_csv.xls)
-# ==========================================
-temp_files = [
-    '24_2기온_csv.xls', '25_2기온_csv.xls', '25_614_713기온_csv.xls',
-    '26_2기온_csv.xls', '26_614_713기온_csv.xls'
-]
-
+# 1. 기온 데이터 반영
+temp_files = ['24_2기온_csv.xls', '25_2기온_csv.xls', '25_614_713기온_csv.xls', '26_2기온_csv.xls', '26_614_713기온_csv.xls']
 for fn in temp_files:
     lines = read_tsv_file(fn)
-    parsed_count = 0
     for line in lines:
         parts = line.split('\t')
-        if len(parts) < 5:
-            continue
-        date_val = parts[0].strip()
-        if not date_re.match(date_val):
-            continue
-        
-        # 기온 데이터 추출 (평균, 최저, 최고)
+        if len(parts) < 5: continue
+        d = parts[0].strip()
+        if not date_re.match(d): continue
         try:
             avg_t = float(parts[2]) if parts[2].strip() else None
             min_t = float(parts[3]) if parts[3].strip() else None
             max_t = float(parts[4]) if parts[4].strip() else None
-        except ValueError:
-            continue
-        
-        init_date(date_val)
-        merged_data[date_val]['avg_temp'] = avg_t
-        merged_data[date_val]['min_temp'] = min_t
-        merged_data[date_val]['max_temp'] = max_t
-        parsed_count += 1
-    print(f"-> {fn} 파싱 완료: {parsed_count}개 일자 반영")
+        except ValueError: continue
+        init_date(d)
+        merged_data[d]['avg_temp'] = avg_t
+        merged_data[d]['min_temp'] = min_t
+        merged_data[d]['max_temp'] = max_t
 
-# ==========================================
-# 2. 습도 데이터 파싱 (*습도_csv.xls)
-# ==========================================
-humidity_files = [
-    '24_515_614습도_csv.xls', '24_615_715습도_csv.xls',
-    '25_515_614습도_csv.xls', '25_615_715습도_csv.xls',
-    '26_515_614습도_csv.xls', '26_615_715습도_csv.xls'
-]
-
+# 2. 습도 데이터 반영
+humidity_files = ['24_515_614습도_csv.xls', '24_615_715습도_csv.xls', '25_515_614습도_csv.xls', '25_615_715습도_csv.xls', '26_515_614습도_csv.xls', '26_615_715습도_csv.xls']
 for fn in humidity_files:
-    lines = read_tsv_file(fn)
-    parsed_count = 0
-    for line in lines:
-        parts = line.split('\t')
-        if len(parts) < 3:
-            continue
-        date_val = parts[0].strip()
-        if not date_re.match(date_val):
-            continue
-        
-        # 상대습도 추출 (보통 3번째 열인 index 2에 위치)
-        try:
-            rh_val = float(parts[2]) if parts[2].strip() else None
-        except ValueError:
-            continue
-        
-        init_date(date_val)
-        merged_data[date_val]['rh'] = rh_val
-        parsed_count += 1
-    print(f"-> {fn} 파싱 완료: {parsed_count}개 일자 반영")
-
-# ==========================================
-# 3. 온열질환 데이터 파싱 (*온열질환.csv)
-# ==========================================
-heat_files = ['24온열질환.csv', '25온열질환.csv', '26온열질환.csv']
-
-for fn in heat_files:
-    path = os.path.join(BASE_DIR, fn)
-    if not os.path.exists(path):
-        print(f"[경고] 온열질환 파일 누락: {fn}")
-        continue
-    
-    parsed_count = 0
-    with open(path, 'r', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        header = next(reader) # 헤더 스킵 ('날짜', '온열질환자', '추정사망자')
-        for row in reader:
-            if len(row) < 3:
-                continue
-            date_val = row[0].strip()
-            if not date_re.match(date_val):
-                continue
-            
-            try:
-                cases = int(row[1]) if row[1].strip() else 0
-                deaths = int(row[2]) if row[2].strip() else 0
-            except ValueError:
-                continue
-            
-            init_date(date_val)
-            merged_data[date_val]['seoul_cases'] = cases
-            merged_data[date_val]['seoul_deaths'] = deaths
-            parsed_count += 1
-    print(f"-> {fn} 파싱 완료: {parsed_count}개 일자 반영")
-
-# ==========================================
-# 4. 대상 기간(매년 05-15 ~ 07-15) 필터링 및 정렬
-# ==========================================
-def is_in_range(date_str):
-    dt = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
-    # 5월 15일 ~ 7월 15일 범위 체크
-    start_date = datetime.date(dt.year, START_MONTH_DAY[0], START_MONTH_DAY[1])
-    end_date = datetime.date(dt.year, END_MONTH_DAY[0], END_MONTH_DAY[1])
-    return start_date <= dt <= end_date
-
-# 전체 일자 생성 (데이터가 비어있어도 누락을 방지하기 위해 생성)
-final_rows = []
-for year in [2024, 2025, 2026]:
-    start_dt = datetime.date(year, START_MONTH_DAY[0], START_MONTH_DAY[1])
-    end_dt = datetime.date(year, END_MONTH_DAY[0], END_MONTH_DAY[1])
-    
-    curr = start_dt
-    while curr <= end_dt:
-        d_str = curr.isoformat()
-        if d_str in merged_data:
-            final_rows.append(merged_data[d_str])
-        else:
-            # 원본 데이터가 아예 없는 경우 빈 값으로 기본 생성
-            final_rows.append({
-                'date': d_str,
-                'year': year,
-                'avg_temp': None,
-                'min_temp': None,
-                'max_temp': None,
-                'rh': None,
-                'seoul_cases': 0,
-                'seoul_deaths': 0
-            })
-        curr += datetime.timedelta(days=1)
-
-# 날짜 순 정렬
-final_rows.sort(key=lambda x: x['date'])
-
-# ==========================================
-# 5. 결과 파일 저장 (JSON & CSV)
-# ==========================================
-# 1) JSON 저장
-json_out_path = os.path.join(BASE_DIR, 'merged_raw.json')
-with open(json_out_path, 'w', encoding='utf-8') as f:
-    json.dump(final_rows, f, ensure_ascii=False, indent=2)
-
-# 2) CSV 저장
-csv_out_path = os.path.join(BASE_DIR, 'merged_raw.csv')
-with open(csv_out_path, 'w', newline='', encoding='utf-8-sig') as f: # Excel 호환을 위해 utf-8-sig 사용
-    writer = csv.DictWriter(f, fieldnames=['date', 'year', 'avg_temp', 'min_temp', 'max_temp', 'rh', 'seoul_cases', 'seoul_deaths'])
-    writer.writeheader()
-    writer.writerows(final_rows)
-
-print("\n==============================================")
-print(f"최종 병합 완료!")
-print(f"총 행 개수(Rows): {len(final_rows)} 행 (연도별 62일 x 3년 = 186행 기대값)")
-print(f"저장된 파일 1 (JSON): {json_out_path}")
-print(f"저장된 파일 2 (CSV): {csv_out_path}")
-print("==============================================")
-
-# 간략히 빈 데이터 상태 요약 출력
-missing_temp_cnt = sum(1 for r in final_rows if r['avg_temp'] is None)
-missing_rh_cnt = sum(1 for r in final_rows if r['rh'] is None)
-print(f"※ 데이터 품질 요약:")
-print(f" - 기온 데이터 누락 일수: {missing_temp_cnt}일 / 186일")
-print(f" - 습도 데이터 누락 일수: {missing_rh_cnt}일 / 186일")
-EOF
-python3 merge_all.py
