@@ -5,11 +5,11 @@ BASE_DIR = '/home/claude/webapp'
 merged_data = {}
 date_re = re.compile(r'^(\d{4}-\d{2}-\d{2})$')
 
-def init_date(date_str):
-    if date_str not in merged_data:
-        dt = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
-        merged_data[date_str] = {
-            'date': date_str, 'year': dt.year,
+def init_date(d_str):
+    if d_str not in merged_data:
+        dt = datetime.datetime.strptime(d_str, '%Y-%m-%d').date()
+        merged_data[d_str] = {
+            'date': d_str, 'year': dt.year,
             'avg_temp': None, 'min_temp': None, 'max_temp': None,
             'rh': None, 'seoul_cases': 0, 'seoul_deaths': 0
         }
@@ -47,3 +47,68 @@ for fn in temp_files:
 # 2. 습도 데이터 반영
 humidity_files = ['24_515_614습도_csv.xls', '24_615_715습도_csv.xls', '25_515_614습도_csv.xls', '25_615_715습도_csv.xls', '26_515_614습도_csv.xls', '26_615_715습도_csv.xls']
 for fn in humidity_files:
+    lines = read_tsv_file(fn)
+    for line in lines:
+        parts = line.split('\t')
+        if len(parts) < 3: continue
+        d = parts[0].strip()
+        if not date_re.match(d): continue
+        try:
+            rh_val = float(parts[2]) if parts[2].strip() else None
+        except ValueError: continue
+        init_date(d)
+        merged_data[d]['rh'] = rh_val
+
+# 3. 온열질환 데이터 반영
+heat_files = ['24온열질환.csv', '25온열질환.csv', '26온열질환.csv']
+for fn in heat_files:
+    path = os.path.join(BASE_DIR, fn)
+    if not os.path.exists(path): continue
+    with open(path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        next(reader, None)
+        for row in reader:
+            if len(row) < 3: continue
+            d = row[0].strip()
+            if not date_re.match(d): continue
+            try:
+                cases = int(row[1]) if row[1].strip() else 0
+                deaths = int(row[2]) if row[2].strip() else 0
+            except ValueError: continue
+            init_date(d)
+            merged_data[d]['seoul_cases'] = cases
+            merged_data[d]['seoul_deaths'] = deaths
+
+# 4. 대상 기간(매년 5/15 ~ 7/15) 생성 및 정렬
+final_rows = []
+for year in [2024, 2025, 2026]:
+    curr = datetime.date(year, 5, 15)
+    end = datetime.date(year, 7, 15)
+    while curr <= end:
+        d_str = curr.isoformat()
+        if d_str in merged_data:
+            final_rows.append(merged_data[d_str])
+        else:
+            final_rows.append({
+                'date': d_str, 'year': year,
+                'avg_temp': None, 'min_temp': None, 'max_temp': None,
+                'rh': None, 'seoul_cases': 0, 'seoul_deaths': 0
+            })
+        curr += datetime.timedelta(days=1)
+
+final_rows.sort(key=lambda x: x['date'])
+
+# 5. 저장 (JSON & CSV)
+with open('merged_raw.json', 'w', encoding='utf-8') as f:
+    json.dump(final_rows, f, ensure_ascii=False, indent=2)
+
+with open('merged_raw.csv', 'w', newline='', encoding='utf-8-sig') as f:
+    writer = csv.DictWriter(f, fieldnames=['date', 'year', 'avg_temp', 'min_temp', 'max_temp', 'rh', 'seoul_cases', 'seoul_deaths'])
+    writer.writeheader()
+    writer.writerows(final_rows)
+
+print('\n' + '='*40)
+print(' 병합 완료!')
+print(f' - 생성된 행 수: {len(final_rows)}개 (186개 정답)')
+print(' - 기온 누락 일수:', sum(1 for r in final_rows if r['avg_temp'] is None))
+print(' - 습도 누락 일수:', sum(1 for r in final_rows if r
