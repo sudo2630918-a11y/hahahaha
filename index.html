@@ -1,133 +1,119 @@
-cd /home/claude && cat > merge_data.py << 'EOF'
-import re, json, csv, datetime, math
+cd /home/claude && python3 -c " import pdfplumber
+pdf = pdfplumber.open('/mnt/user-data/uploads/26온열질환_csv.pdf')
+p = pdf.pages[1]
+t = p.extract_tables()[0]
+for row in t[:3]:
+    print(len(row), row[:6]) "
 
-# ---------- 1. Temperature files (tab-separated, euc-kr encoded, .xls extension) ----------
-temp_files = [
-    'ta_20260716205510.xls' if False else None,
-]
-import subprocess, glob, os
+{  "returncode" : 0,
+  "stdout" : "37 ['', '2026-06-20', '0', '0', '0', '0']\n37 [None, '2026-06-21', '11', '0', '3', '0']\n37 [None, '2026-06-22', '1', '0', '0', '0']\n",
+  "stderr" : "" }
 
-def read_euckr(path):
-    out = subprocess.run(['iconv','-f','euc-kr','-t','utf-8', path], capture_output=True)
-    return out.stdout.decode('utf-8')
+cd /home/claude && python3 -c "
+import pdfplumber, re, csv
 
-uploads = '/mnt/user-data/uploads'
-temp_map = {}  # date -> dict(avg,min,max)
+def extract_seoul(path):
+    pdf = pdfplumber.open(path)
+    rows_out = {}
+    for page in pdf.pages:
+        for t in page.extract_tables():
+            if not t:
+                continue
+            for row in t:
+                # find date cell index
+                for i,cell in enumerate(row):
+                    if cell and re.match(r'^\d{4}-\d{2}-\d{2}$', cell):
+                        date = cell
+                        if i+4 < len(row):
+                            patients = row[i+3] if row[i+3] not in (None,'') else '0'
+                            deaths = row[i+4] if row[i+4] not in (None,'') else '0'
+                            rows_out[date] = (patients, deaths)
+                        break
+    return sorted(rows_out.items())
 
-temp_file_list = [
-    'ta_20260716205510.xls', # 2024 05-15~06-13
-    'ta_20260716214959.xls', # 2024 06-14~07-13
-    'ta_20260716215139.xls', # 2024 07-14~07-15
-    'ta_20260716205600.xls', # 2025 05-15~06-13
-    'ta_20260716214914.xls', # 2025 06-14~07-13
-    'ta_20260716215213.xls', # 2025 07-14~07-15
-    'ta_20260716205728.xls', # 2026 05-15~06-13
-    'ta_20260716214822.xls', # 2026 06-14~07-13
-    'ta_20260716215226.xls', # 2026 07-14~07-15
-]
+for f,label in [('24온열질환_csv.pdf','24'),('25온열질환_csv.pdf','25'),('26온열질환_csv.pdf','26')]:
+    res = extract_seoul('/mnt/user-data/uploads/'+f)
+    print(label, len(res), res[0], res[-1])
+    with open(f'/home/claude/{label}온열질환_seoul.csv','w',newline='',encoding='utf-8') as fh:
+        w = csv.writer(fh)
+        w.writerow(['날짜','온열질환자','추정사망자'])
+        for d,(p_,de) in res:
+            w.writerow([d,p_,de]) "
 
-date_re = re.compile(r'^(\d{4}-\d{2}-\d{2})$')
-for fn in temp_file_list:
-    path = os.path.join(uploads, fn)
-    if not os.path.exists(path):
-        print("MISSING FILE:", fn)
-        continue
-    text = read_euckr(path)
-    for line in text.split('\r\n'):
-        parts = line.split('\t')
-        if len(parts) < 5:
-            continue
-        d = parts[0].strip()
-        if not date_re.match(d):
-            continue
-        try:
-            avg_t = float(parts[2]); min_t = float(parts[3]); max_t = float(parts[4])
-        except ValueError:
-            continue
-        temp_map[d] = {'avg_temp': avg_t, 'min_temp': min_t, 'max_temp': max_t}
+{ "returncode" : 0,
+  "stdout" : "24 57 ('2024-05-20', ('0', '0')) ('2024-07-15', ('2', '0'))\n25 62 ('2025-05-15', ('0', '0')) ('2025-07-15', ('0', '0'))\n26 62 ('2026-05-15', ('3', '1')) ('2026-07-15', ('2', '0'))\n",
+  "stderr" : "" }
 
-print("temp days parsed:", len(temp_map))
+cd /home/claude && grep -E "2024-06-19|2024-07-13|2025-07-08|2025-06-15|2026-07-11|2026-06-13" 24온열질환_seoul.csv 25온열질환_seoul.csv 26온열질환_seoul.csv
+{ "returncode" : 0,
+  "stdout" : "24온열질환_seoul.csv:2024-06-19,3,0\r\n24온열질환_seoul.csv:2024-07-13,0,0\r\n25온열질환_seoul.csv:2025-06-15,16,0\r\n25온열질환_seoul.csv:2025-07-08,23,0\r\n26온열질환_seoul.csv:2026-06-13,1,0\r\n26온열질환_seoul.csv:2026-07-11,6,0\r\n",
+  "stderr" : "" }
 
-# ---------- 2. ASOS humidity/wind/solar files ----------
-asos_files = [
-    'OBS_ASOS_DD_20260716213502.xls', 'OBS_ASOS_DD_20260716213539.xls', # 2024
-    'OBS_ASOS_DD_20260716213737.xls', 'OBS_ASOS_DD_20260716213838.xls', # 2025
-    'OBS_ASOS_DD_20260716213902.xls', 'OBS_ASOS_DD_20260716214039.xls', # 2026
-]
-asos_map = {}
-for fn in asos_files:
-    path = os.path.join(uploads, fn)
-    text = read_euckr(path)
-    lines = text.split('\r\n')
-    for line in lines[1:]:
-        parts = line.split('\t')
-        if len(parts) < 7:
-            continue
-        d = parts[2].strip()
-        if not date_re.match(d):
-            continue
-        try:
-            wind = float(parts[3]) if parts[3].strip() != '' else None
-            rh = float(parts[5]) if parts[5].strip() != '' else None
-            solar = float(parts[6]) if parts[6].strip() != '' else None
-        except ValueError:
-            continue
-        asos_map[d] = {'wind': wind, 'rh': rh, 'solar': solar}
+cd /home/claude && python3 -c " import pdfplumber
+pdf = pdfplumber.open('/mnt/user-data/uploads/24온열질환_csv.pdf')
+p = pdf.pages[1]
+t = p.extract_tables()[0]
+for row in t:
+    if row[0]=='2024-07-13' or (len(row)>1 and row[1]=='2024-07-13'):
+        print(row) "
+{  "returncode" : 0,
+  "stdout" : "['2024-07-13', '21', '0', '0', '0', '1', '0', '0', '0', '4', '0', '0', '0', '1', '0', '0', '0', '5', '0', '2', '0', '2', '0', '4', '0', '0', '0', '0', '0', '2', '0', '0', '0', '0', '0', '0', '0']\n",
+  "stderr" : "" }
 
-print("asos days parsed:", len(asos_map))
+cd /mnt/user-data/uploads/ && python3 -c "for f in ['25_614_713기온_csv.xls','26_614_713기온_csv.xls']:
+    print('===',f)
+    with open(f,'rb') as fh:
+        data = fh.read()
+    text = data.decode('cp949', errors='replace')
+    lines = text.split(chr(13)+chr(10))
+    print('num lines', len(lines))
+    print(lines[:8])
+    print(lines[-5:]) "
+{  "returncode" : 0,
+  "stdout" : "=== 25_614_713기온_csv.xls\nnum lines 42\n['기온분석', '[검색조건]', '자료구분 : 일', '자료형태 : 기본', '지역\/지점 : 서울', '기간 : 20250614~20250715', '', '날짜\\t지점\\t평균기온(℃)\\t최저기온(℃)\\t최고기온(℃)']\n['2025-07-13\\t108\\t27.7\\t25.6\\t31', '', '', '', '']\n=== 26_614_713기온_csv.xls\nnum lines 42\n['기온분석', '[검색조건]', '자료구분 : 일', '자료형태 : 기본', '지역\/지점 : 서울', '기간 : 20260614~20260715', '', '날짜\\t지점\\t평균기온(℃)\\t최저기온(℃)\\t최고기온(℃)']\n['2026-07-13\\t108\\t30.4\\t27.6\\t33.5', '', '', '', '']\n",
+  "stderr" : "" }
 
-# ---------- 3. Heat illness (Seoul) ----------
-heat = json.load(open('data/heat_illness_seoul.json'))
-heat_map = {}
-for year, days in heat.items():
-    for d, v in days.items():
-        heat_map[d] = v
+cd /mnt/user-data/uploads/ && for f in "24_614_713기온_csv.csv" "25_515_613기온_csv.csv" "26_515_0613기온_csv.csv" "24_515_613기온_csv.csv"; do echo "=== $f ==="; python3 -c "
+with open('$f','rb') as fh:
+    data = fh.read()
+print(repr(data[:300]))
+"; done
 
-print("heat illness days parsed:", len(heat_map))
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: '24_614_713기온_csv.csv'
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: '25_515_613기온_csv.csv'
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: '26_515_0613기온_csv.csv'
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: '24_515_613기온_csv.csv'
 
-# ---------- 4. Build combined dataset for each year 05-15~07-15 ----------
-def daterange(y):
-    start = datetime.date(y,5,15)
-    end = datetime.date(y,7,15)
-    cur = start
-    while cur <= end:
-        yield cur.isoformat()
-        cur += datetime.timedelta(days=1)
+ls -la /mnt/user-data/uploads/ | wc -l; ls /mnt/user-data/uploads/
+{  "returncode" : 0,
+  "stdout" : "17\n24_2기온_csv.xls\n24_515_614습도_csv.xls\n24_615_715습도_csv.xls\n24온열질환_csv.pdf\n25_2기온_csv.xls\n25_515_614습도_csv.xls\n25_614_713기온_csv.xls\n25_615_715습도_csv.xls\n25온열질환_csv.pdf\n26_2기온_csv.xls\n26_515_614습도_csv.xls\n26_614_713기온_csv.xls\n26_615_715습도_csv.xls\n26온열질환_csv.pdf\n",
+  "stderr" : "" }
 
-rows = []
-missing_temp = []
-missing_asos = []
-for y in [2024,2025,2026]:
-    for d in daterange(y):
-        t = temp_map.get(d)
-        a = asos_map.get(d)
-        h = heat_map.get(d)
-        if t is None:
-            missing_temp.append(d)
-        if a is None:
-            missing_asos.append(d)
-        rows.append({
-            'date': d,
-            'year': y,
-            'avg_temp': t['avg_temp'] if t else None,
-            'min_temp': t['min_temp'] if t else None,
-            'max_temp': t['max_temp'] if t else None,
-            'wind': a['wind'] if a else None,
-            'rh': a['rh'] if a else None,
-            'solar': a['solar'] if a else None,
-            'seoul_cases': h['seoul_cases'] if h else None,
-            'seoul_deaths': h['seoul_deaths'] if h else None,
-        })
-
-print("total rows:", len(rows))
-print("missing temp dates:", missing_temp)
-print("missing asos dates:", missing_asos)
-print("rows with heat illness missing:", sum(1 for r in rows if r['seoul_cases'] is None))
-
-with open('data/merged_raw.json','w',encoding='utf-8') as f:
-    json.dump(rows, f, ensure_ascii=False, indent=2)
-EOF
-python3 merge_data.py
-      {  "returncode" : 0,
-  "stdout" : "MISSING FILE: ta_20260716205510.xls\nMISSING FILE: ta_20260716205600.xls\nMISSING FILE: ta_20260716205728.xls\ntemp days parsed: 96\nasos days parsed: 186\nheat illness days parsed: 181\ntotal rows: 186\nmissing temp dates: ['2024-05-15', '2024-05-16', '2024-05-17', '2024-05-18', '2024-05-19', '2024-05-20', '2024-05-21', '2024-05-22', '2024-05-23', '2024-05-24', '2024-05-25', '2024-05-26', '2024-05-27', '2024-05-28', '2024-05-29', '2024-05-30', '2024-05-31', '2024-06-01', '2024-06-02', '2024-06-03', '2024-06-04', '2024-06-05', '2024-06-06', '2024-06-07', '2024-06-08', '2024-06-09', '2024-06-10', '2024-06-11', '2024-06-12', '2024-06-13', '2025-05-15', '2025-05-16', '2025-05-17', '2025-05-18', '2025-05-19', '2025-05-20', '2025-05-21', '2025-05-22', '2025-05-23', '2025-05-24', '2025-05-25', '2025-05-26', '2025-05-27', '2025-05-28', '2025-05-29', '2025-05-30', '2025-05-31', '2025-06-01', '2025-06-02', '2025-06-03', '2025-06-04', '2025-06-05', '2025-06-06', '2025-06-07', '2025-06-08', '2025-06-09', '2025-06-10', '2025-06-11', '2025-06-12', '2025-06-13', '2026-05-15', '2026-05-16', '2026-05-17', '2026-05-18', '2026-05-19', '2026-05-20', '2026-05-21', '2026-05-22', '2026-05-23', '2026-05-24', '2026-05-25', '2026-05-26', '2026-05-27', '2026-05-28', '2026-05-29', '2026-05-30', '2026-05-31', '2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04', '2026-06-05', '2026-06-06', '2026-06-07', '2026-06-08', '2026-06-09', '2026-06-10', '2026-06-11', '2026-06-12', '2026-06-13']\nmissing asos dates: []\nrows with heat illness missing: 5\n",
-  "stderr" : ""}
+mkdir -p /home/claude/webapp && cd /home/claude/webapp
+# Copy original cp949 xls files as-is
+cp /mnt/user-data/uploads/24_2기온_csv.xls .
+cp /mnt/user-data/uploads/25_614_713기온_csv.xls .
+cp /mnt/user-data/uploads/25_2기온_csv.xls .
+cp /mnt/user-data/uploads/26_614_713기온_csv.xls .
+cp /mnt/user-data/uploads/26_2기온_csv.xls .
+cp /mnt/user-data/uploads/24_515_614습도_csv.xls .
+cp /mnt/user-data/uploads/24_615_715습도_csv.xls .
+cp /mnt/user-data/uploads/25_515_614습도_csv.xls .
+cp /mnt/user-data/uploads/25_615_715습도_csv.xls .
+cp /mnt/user-data/uploads/26_515_614습도_csv.xls .
+cp /mnt/user-data/uploads/26_615_715습도_csv.xls .
+cp /home/claude/24온열질환_seoul.csv ./24온열질환.csv
+cp /home/claude/25온열질환_seoul.csv ./25온열질환.csv
+cp /home/claude/26온열질환_seoul.csv ./26온열질환.csv
+ls -la
+{  "returncode" : 0,
+  "stdout" : "total 64\ndrwxr-xr-x 2 root root 4096 Jul 16 15:42 .\ndrwxr-xr-x 8 root root 4096 Jul 16 15:42 ..\n-rw-r--r-- 1 root root  218 Jul 16 15:42 24_2기온_csv.xls\n-rw-r--r-- 1 root root 1343 Jul 16 15:42 24_515_614습도_csv.xls\n-rw-r--r-- 1 root root 1334 Jul 16 15:42 24_615_715습도_csv.xls\n-rw-r--r-- 1 root root  952 Jul 16 15:42 24온열질환.csv\n-rw-r--r-- 1 root root  218 Jul 16 15:42 25_2기온_csv.xls\n-rw-r--r-- 1 root root 1337 Jul 16 15:42 25_515_614습도_csv.xls\n-rw-r--r-- 1 root root 1066 Jul 16 15:42 25_614_713기온_csv.xls\n-rw-r--r-- 1 root root 1329 Jul 16 15:42 25_615_715습도_csv.xls\n-rw-r--r-- 1 root root 1037 Jul 16 15:42 25온열질환.csv\n-rw-r--r-- 1 root root  216 Jul 16 15:42 26_2기온_csv.xls\n-rw-r--r-- 1 root root 1340 Jul 16 15:42 26_515_614습도_csv.xls\n-rw-r--r-- 1 root root 1062 Jul 16 15:42 26_614_713기온_csv.xls\n-rw-r--r-- 1 root root 1334 Jul 16 15:42 26_615_715습도_csv.xls\n-rw-r--r-- 1 root root 1035 Jul 16 15:42 26온열질환.csv\n",
+  "stderr" : "" }
