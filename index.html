@@ -1,119 +1,215 @@
-cd /home/claude && python3 -c " import pdfplumber
-pdf = pdfplumber.open('/mnt/user-data/uploads/26온열질환_csv.pdf')
-p = pdf.pages[1]
-t = p.extract_tables()[0]
-for row in t[:3]:
-    print(len(row), row[:6]) "
+cd /home/claude/webapp && cat > merge_all.py << 'EOF'
+import os
+import re
+import csv
+import json
+import datetime
 
-{  "returncode" : 0,
-  "stdout" : "37 ['', '2026-06-20', '0', '0', '0', '0']\n37 [None, '2026-06-21', '11', '0', '3', '0']\n37 [None, '2026-06-22', '1', '0', '0', '0']\n",
-  "stderr" : "" }
+# 설정
+BASE_DIR = '/home/claude/webapp'
+START_MONTH_DAY = (5, 15)  # 5월 15일
+END_MONTH_DAY = (7, 15)    # 7월 15일
 
-cd /home/claude && python3 -c "
-import pdfplumber, re, csv
+# 데이터 저장을 위한 마스터 맵: { 'YYYY-MM-DD': { ... } }
+merged_data = {}
 
-def extract_seoul(path):
-    pdf = pdfplumber.open(path)
-    rows_out = {}
-    for page in pdf.pages:
-        for t in page.extract_tables():
-            if not t:
+# 날짜 패턴 (YYYY-MM-DD)
+date_re = re.compile(r'^(\d{4}-\d{2}-\d{2})$')
+
+def init_date(date_str):
+    if date_str not in merged_data:
+        dt = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+        merged_data[date_str] = {
+            'date': date_str,
+            'year': dt.year,
+            'avg_temp': None,
+            'min_temp': None,
+            'max_temp': None,
+            'rh': None,         # 상대습도
+            'seoul_cases': 0,   # 온열질환자 수
+            'seoul_deaths': 0   # 사망자 수
+        }
+
+def read_tsv_file(filename):
+    """기상청 기온/습도 XLS(실제로는 TSV) 파일을 읽어 줄 단위 리스트 반환"""
+    path = os.path.join(BASE_DIR, filename)
+    if not os.path.exists(path):
+        print(f"[경고] 파일이 존재하지 않습니다: {filename}")
+        return []
+    
+    # cp949로 읽고 실패 시 euc-kr로 디코딩
+    try:
+        with open(path, 'r', encoding='cp949', errors='ignore') as f:
+            lines = f.read().splitlines()
+    except Exception:
+        with open(path, 'r', encoding='euc-kr', errors='ignore') as f:
+            lines = f.read().splitlines()
+    return lines
+
+# ==========================================
+# 1. 기온 데이터 파싱 (*기온_csv.xls)
+# ==========================================
+temp_files = [
+    '24_2기온_csv.xls', '25_2기온_csv.xls', '25_614_713기온_csv.xls',
+    '26_2기온_csv.xls', '26_614_713기온_csv.xls'
+]
+
+for fn in temp_files:
+    lines = read_tsv_file(fn)
+    parsed_count = 0
+    for line in lines:
+        parts = line.split('\t')
+        if len(parts) < 5:
+            continue
+        date_val = parts[0].strip()
+        if not date_re.match(date_val):
+            continue
+        
+        # 기온 데이터 추출 (평균, 최저, 최고)
+        try:
+            avg_t = float(parts[2]) if parts[2].strip() else None
+            min_t = float(parts[3]) if parts[3].strip() else None
+            max_t = float(parts[4]) if parts[4].strip() else None
+        except ValueError:
+            continue
+        
+        init_date(date_val)
+        merged_data[date_val]['avg_temp'] = avg_t
+        merged_data[date_val]['min_temp'] = min_t
+        merged_data[date_val]['max_temp'] = max_t
+        parsed_count += 1
+    print(f"-> {fn} 파싱 완료: {parsed_count}개 일자 반영")
+
+# ==========================================
+# 2. 습도 데이터 파싱 (*습도_csv.xls)
+# ==========================================
+humidity_files = [
+    '24_515_614습도_csv.xls', '24_615_715습도_csv.xls',
+    '25_515_614습도_csv.xls', '25_615_715습도_csv.xls',
+    '26_515_614습도_csv.xls', '26_615_715습도_csv.xls'
+]
+
+for fn in humidity_files:
+    lines = read_tsv_file(fn)
+    parsed_count = 0
+    for line in lines:
+        parts = line.split('\t')
+        if len(parts) < 3:
+            continue
+        date_val = parts[0].strip()
+        if not date_re.match(date_val):
+            continue
+        
+        # 상대습도 추출 (보통 3번째 열인 index 2에 위치)
+        try:
+            rh_val = float(parts[2]) if parts[2].strip() else None
+        except ValueError:
+            continue
+        
+        init_date(date_val)
+        merged_data[date_val]['rh'] = rh_val
+        parsed_count += 1
+    print(f"-> {fn} 파싱 완료: {parsed_count}개 일자 반영")
+
+# ==========================================
+# 3. 온열질환 데이터 파싱 (*온열질환.csv)
+# ==========================================
+heat_files = ['24온열질환.csv', '25온열질환.csv', '26온열질환.csv']
+
+for fn in heat_files:
+    path = os.path.join(BASE_DIR, fn)
+    if not os.path.exists(path):
+        print(f"[경고] 온열질환 파일 누락: {fn}")
+        continue
+    
+    parsed_count = 0
+    with open(path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        header = next(reader) # 헤더 스킵 ('날짜', '온열질환자', '추정사망자')
+        for row in reader:
+            if len(row) < 3:
                 continue
-            for row in t:
-                # find date cell index
-                for i,cell in enumerate(row):
-                    if cell and re.match(r'^\d{4}-\d{2}-\d{2}$', cell):
-                        date = cell
-                        if i+4 < len(row):
-                            patients = row[i+3] if row[i+3] not in (None,'') else '0'
-                            deaths = row[i+4] if row[i+4] not in (None,'') else '0'
-                            rows_out[date] = (patients, deaths)
-                        break
-    return sorted(rows_out.items())
+            date_val = row[0].strip()
+            if not date_re.match(date_val):
+                continue
+            
+            try:
+                cases = int(row[1]) if row[1].strip() else 0
+                deaths = int(row[2]) if row[2].strip() else 0
+            except ValueError:
+                continue
+            
+            init_date(date_val)
+            merged_data[date_val]['seoul_cases'] = cases
+            merged_data[date_val]['seoul_deaths'] = deaths
+            parsed_count += 1
+    print(f"-> {fn} 파싱 완료: {parsed_count}개 일자 반영")
 
-for f,label in [('24온열질환_csv.pdf','24'),('25온열질환_csv.pdf','25'),('26온열질환_csv.pdf','26')]:
-    res = extract_seoul('/mnt/user-data/uploads/'+f)
-    print(label, len(res), res[0], res[-1])
-    with open(f'/home/claude/{label}온열질환_seoul.csv','w',newline='',encoding='utf-8') as fh:
-        w = csv.writer(fh)
-        w.writerow(['날짜','온열질환자','추정사망자'])
-        for d,(p_,de) in res:
-            w.writerow([d,p_,de]) "
+# ==========================================
+# 4. 대상 기간(매년 05-15 ~ 07-15) 필터링 및 정렬
+# ==========================================
+def is_in_range(date_str):
+    dt = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+    # 5월 15일 ~ 7월 15일 범위 체크
+    start_date = datetime.date(dt.year, START_MONTH_DAY[0], START_MONTH_DAY[1])
+    end_date = datetime.date(dt.year, END_MONTH_DAY[0], END_MONTH_DAY[1])
+    return start_date <= dt <= end_date
 
-{ "returncode" : 0,
-  "stdout" : "24 57 ('2024-05-20', ('0', '0')) ('2024-07-15', ('2', '0'))\n25 62 ('2025-05-15', ('0', '0')) ('2025-07-15', ('0', '0'))\n26 62 ('2026-05-15', ('3', '1')) ('2026-07-15', ('2', '0'))\n",
-  "stderr" : "" }
+# 전체 일자 생성 (데이터가 비어있어도 누락을 방지하기 위해 생성)
+final_rows = []
+for year in [2024, 2025, 2026]:
+    start_dt = datetime.date(year, START_MONTH_DAY[0], START_MONTH_DAY[1])
+    end_dt = datetime.date(year, END_MONTH_DAY[0], END_MONTH_DAY[1])
+    
+    curr = start_dt
+    while curr <= end_dt:
+        d_str = curr.isoformat()
+        if d_str in merged_data:
+            final_rows.append(merged_data[d_str])
+        else:
+            # 원본 데이터가 아예 없는 경우 빈 값으로 기본 생성
+            final_rows.append({
+                'date': d_str,
+                'year': year,
+                'avg_temp': None,
+                'min_temp': None,
+                'max_temp': None,
+                'rh': None,
+                'seoul_cases': 0,
+                'seoul_deaths': 0
+            })
+        curr += datetime.timedelta(days=1)
 
-cd /home/claude && grep -E "2024-06-19|2024-07-13|2025-07-08|2025-06-15|2026-07-11|2026-06-13" 24온열질환_seoul.csv 25온열질환_seoul.csv 26온열질환_seoul.csv
-{ "returncode" : 0,
-  "stdout" : "24온열질환_seoul.csv:2024-06-19,3,0\r\n24온열질환_seoul.csv:2024-07-13,0,0\r\n25온열질환_seoul.csv:2025-06-15,16,0\r\n25온열질환_seoul.csv:2025-07-08,23,0\r\n26온열질환_seoul.csv:2026-06-13,1,0\r\n26온열질환_seoul.csv:2026-07-11,6,0\r\n",
-  "stderr" : "" }
+# 날짜 순 정렬
+final_rows.sort(key=lambda x: x['date'])
 
-cd /home/claude && python3 -c " import pdfplumber
-pdf = pdfplumber.open('/mnt/user-data/uploads/24온열질환_csv.pdf')
-p = pdf.pages[1]
-t = p.extract_tables()[0]
-for row in t:
-    if row[0]=='2024-07-13' or (len(row)>1 and row[1]=='2024-07-13'):
-        print(row) "
-{  "returncode" : 0,
-  "stdout" : "['2024-07-13', '21', '0', '0', '0', '1', '0', '0', '0', '4', '0', '0', '0', '1', '0', '0', '0', '5', '0', '2', '0', '2', '0', '4', '0', '0', '0', '0', '0', '2', '0', '0', '0', '0', '0', '0', '0']\n",
-  "stderr" : "" }
+# ==========================================
+# 5. 결과 파일 저장 (JSON & CSV)
+# ==========================================
+# 1) JSON 저장
+json_out_path = os.path.join(BASE_DIR, 'merged_raw.json')
+with open(json_out_path, 'w', encoding='utf-8') as f:
+    json.dump(final_rows, f, ensure_ascii=False, indent=2)
 
-cd /mnt/user-data/uploads/ && python3 -c "for f in ['25_614_713기온_csv.xls','26_614_713기온_csv.xls']:
-    print('===',f)
-    with open(f,'rb') as fh:
-        data = fh.read()
-    text = data.decode('cp949', errors='replace')
-    lines = text.split(chr(13)+chr(10))
-    print('num lines', len(lines))
-    print(lines[:8])
-    print(lines[-5:]) "
-{  "returncode" : 0,
-  "stdout" : "=== 25_614_713기온_csv.xls\nnum lines 42\n['기온분석', '[검색조건]', '자료구분 : 일', '자료형태 : 기본', '지역\/지점 : 서울', '기간 : 20250614~20250715', '', '날짜\\t지점\\t평균기온(℃)\\t최저기온(℃)\\t최고기온(℃)']\n['2025-07-13\\t108\\t27.7\\t25.6\\t31', '', '', '', '']\n=== 26_614_713기온_csv.xls\nnum lines 42\n['기온분석', '[검색조건]', '자료구분 : 일', '자료형태 : 기본', '지역\/지점 : 서울', '기간 : 20260614~20260715', '', '날짜\\t지점\\t평균기온(℃)\\t최저기온(℃)\\t최고기온(℃)']\n['2026-07-13\\t108\\t30.4\\t27.6\\t33.5', '', '', '', '']\n",
-  "stderr" : "" }
+# 2) CSV 저장
+csv_out_path = os.path.join(BASE_DIR, 'merged_raw.csv')
+with open(csv_out_path, 'w', newline='', encoding='utf-8-sig') as f: # Excel 호환을 위해 utf-8-sig 사용
+    writer = csv.DictWriter(f, fieldnames=['date', 'year', 'avg_temp', 'min_temp', 'max_temp', 'rh', 'seoul_cases', 'seoul_deaths'])
+    writer.writeheader()
+    writer.writerows(final_rows)
 
-cd /mnt/user-data/uploads/ && for f in "24_614_713기온_csv.csv" "25_515_613기온_csv.csv" "26_515_0613기온_csv.csv" "24_515_613기온_csv.csv"; do echo "=== $f ==="; python3 -c "
-with open('$f','rb') as fh:
-    data = fh.read()
-print(repr(data[:300]))
-"; done
+print("\n==============================================")
+print(f"최종 병합 완료!")
+print(f"총 행 개수(Rows): {len(final_rows)} 행 (연도별 62일 x 3년 = 186행 기대값)")
+print(f"저장된 파일 1 (JSON): {json_out_path}")
+print(f"저장된 파일 2 (CSV): {csv_out_path}")
+print("==============================================")
 
-Traceback (most recent call last):
-  File "<string>", line 2, in <module>
-FileNotFoundError: [Errno 2] No such file or directory: '24_614_713기온_csv.csv'
-Traceback (most recent call last):
-  File "<string>", line 2, in <module>
-FileNotFoundError: [Errno 2] No such file or directory: '25_515_613기온_csv.csv'
-Traceback (most recent call last):
-  File "<string>", line 2, in <module>
-FileNotFoundError: [Errno 2] No such file or directory: '26_515_0613기온_csv.csv'
-Traceback (most recent call last):
-  File "<string>", line 2, in <module>
-FileNotFoundError: [Errno 2] No such file or directory: '24_515_613기온_csv.csv'
-
-ls -la /mnt/user-data/uploads/ | wc -l; ls /mnt/user-data/uploads/
-{  "returncode" : 0,
-  "stdout" : "17\n24_2기온_csv.xls\n24_515_614습도_csv.xls\n24_615_715습도_csv.xls\n24온열질환_csv.pdf\n25_2기온_csv.xls\n25_515_614습도_csv.xls\n25_614_713기온_csv.xls\n25_615_715습도_csv.xls\n25온열질환_csv.pdf\n26_2기온_csv.xls\n26_515_614습도_csv.xls\n26_614_713기온_csv.xls\n26_615_715습도_csv.xls\n26온열질환_csv.pdf\n",
-  "stderr" : "" }
-
-mkdir -p /home/claude/webapp && cd /home/claude/webapp
-# Copy original cp949 xls files as-is
-cp /mnt/user-data/uploads/24_2기온_csv.xls .
-cp /mnt/user-data/uploads/25_614_713기온_csv.xls .
-cp /mnt/user-data/uploads/25_2기온_csv.xls .
-cp /mnt/user-data/uploads/26_614_713기온_csv.xls .
-cp /mnt/user-data/uploads/26_2기온_csv.xls .
-cp /mnt/user-data/uploads/24_515_614습도_csv.xls .
-cp /mnt/user-data/uploads/24_615_715습도_csv.xls .
-cp /mnt/user-data/uploads/25_515_614습도_csv.xls .
-cp /mnt/user-data/uploads/25_615_715습도_csv.xls .
-cp /mnt/user-data/uploads/26_515_614습도_csv.xls .
-cp /mnt/user-data/uploads/26_615_715습도_csv.xls .
-cp /home/claude/24온열질환_seoul.csv ./24온열질환.csv
-cp /home/claude/25온열질환_seoul.csv ./25온열질환.csv
-cp /home/claude/26온열질환_seoul.csv ./26온열질환.csv
-ls -la
-{  "returncode" : 0,
-  "stdout" : "total 64\ndrwxr-xr-x 2 root root 4096 Jul 16 15:42 .\ndrwxr-xr-x 8 root root 4096 Jul 16 15:42 ..\n-rw-r--r-- 1 root root  218 Jul 16 15:42 24_2기온_csv.xls\n-rw-r--r-- 1 root root 1343 Jul 16 15:42 24_515_614습도_csv.xls\n-rw-r--r-- 1 root root 1334 Jul 16 15:42 24_615_715습도_csv.xls\n-rw-r--r-- 1 root root  952 Jul 16 15:42 24온열질환.csv\n-rw-r--r-- 1 root root  218 Jul 16 15:42 25_2기온_csv.xls\n-rw-r--r-- 1 root root 1337 Jul 16 15:42 25_515_614습도_csv.xls\n-rw-r--r-- 1 root root 1066 Jul 16 15:42 25_614_713기온_csv.xls\n-rw-r--r-- 1 root root 1329 Jul 16 15:42 25_615_715습도_csv.xls\n-rw-r--r-- 1 root root 1037 Jul 16 15:42 25온열질환.csv\n-rw-r--r-- 1 root root  216 Jul 16 15:42 26_2기온_csv.xls\n-rw-r--r-- 1 root root 1340 Jul 16 15:42 26_515_614습도_csv.xls\n-rw-r--r-- 1 root root 1062 Jul 16 15:42 26_614_713기온_csv.xls\n-rw-r--r-- 1 root root 1334 Jul 16 15:42 26_615_715습도_csv.xls\n-rw-r--r-- 1 root root 1035 Jul 16 15:42 26온열질환.csv\n",
-  "stderr" : "" }
+# 간략히 빈 데이터 상태 요약 출력
+missing_temp_cnt = sum(1 for r in final_rows if r['avg_temp'] is None)
+missing_rh_cnt = sum(1 for r in final_rows if r['rh'] is None)
+print(f"※ 데이터 품질 요약:")
+print(f" - 기온 데이터 누락 일수: {missing_temp_cnt}일 / 186일")
+print(f" - 습도 데이터 누락 일수: {missing_rh_cnt}일 / 186일")
+EOF
+python3 merge_all.py
