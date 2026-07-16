@@ -1,57 +1,133 @@
-from sklearn.model_selection import GridSearchcV
-# 하이퍼 파라미터 그리드 정의
-param_grid = {
-'nestimators': 150,
-100, 2001,
-'max_depth': [None,
-10, 20, 30.
-'min_samples_split': [2, 5, 10],
-'min_samples_leaf': [1, 2, 4]
-# 그리드 서치 수행
-grid_search = GridSearchCVC
-RandomForestRegressor (random_state=42), param_grid-param_grid, cv=5,
-scoring='neg_mean_squared_error', n_jobs=-1
-)
-grid_search.fit(X_train_scaled, y_train)
-# 최적 파라미터 플럭
-print("최적 파라미터:", grid_search.best_params_)
-# 최적 모델로 예속
-best_model
-= grid_search.best_estimator-
-Y_pred_best = best_model.predict(X_test_scaled)
-# 성능 평가
-rmse_best = np.sqrt mean_squared_error(y_test, y_pred_best))
-r2_best = r2_score(y_test, y_pred_best)
-print(+최적화 모델 RMSE: trmse_best:.2f}')
-print(f'최적화 모델 R-squared: tr2_best:.2f}
+cd /home/claude && cat > merge_data.py << 'EOF'
+import re, json, csv, datetime, math
 
-#도요질환 사항자 수 생성 (환자 수와 상황관계, 매우 높은 기록에서 증가)
-nundeath = np.zeros(Len(date_range))
-for 1 in range(Len(date_range)) :
-death_prob = 0
-if temp_base[i] > 33:
-death_prob = 0.08
-elif temp_base[i] > 30:
-death_prob = 0.03
-elif temp_base[i] > 28:
-death_prob = 0.01
-else:
-death_prob = 0.002
-numdeath[i] = np.random.binomial(int(numpatient[i]), death_prob)
-# 데이터프레임 생성
-summer_df
-= pd.DataFrame ({
-'Date': date_range, 1': temp_base.
-# 기온
-11' : humidity-base, # 습도
-'WBGT': WBGT, # 일지수
-'month' : month,
-'day': daya
-'numpatient': numpatient,
-'numdeath': numdeat
-子）
-# 2. 상관관계 분석
-print("살과관계 분석 중...")
-correlation_matrix = summer df[['1', '11', 'WBGT'.
-'month', "day', 'numpatient',
+# ---------- 1. Temperature files (tab-separated, euc-kr encoded, .xls extension) ----------
+temp_files = [
+    'ta_20260716205510.xls' if False else None,
+]
+import subprocess, glob, os
 
+def read_euckr(path):
+    out = subprocess.run(['iconv','-f','euc-kr','-t','utf-8', path], capture_output=True)
+    return out.stdout.decode('utf-8')
+
+uploads = '/mnt/user-data/uploads'
+temp_map = {}  # date -> dict(avg,min,max)
+
+temp_file_list = [
+    'ta_20260716205510.xls', # 2024 05-15~06-13
+    'ta_20260716214959.xls', # 2024 06-14~07-13
+    'ta_20260716215139.xls', # 2024 07-14~07-15
+    'ta_20260716205600.xls', # 2025 05-15~06-13
+    'ta_20260716214914.xls', # 2025 06-14~07-13
+    'ta_20260716215213.xls', # 2025 07-14~07-15
+    'ta_20260716205728.xls', # 2026 05-15~06-13
+    'ta_20260716214822.xls', # 2026 06-14~07-13
+    'ta_20260716215226.xls', # 2026 07-14~07-15
+]
+
+date_re = re.compile(r'^(\d{4}-\d{2}-\d{2})$')
+for fn in temp_file_list:
+    path = os.path.join(uploads, fn)
+    if not os.path.exists(path):
+        print("MISSING FILE:", fn)
+        continue
+    text = read_euckr(path)
+    for line in text.split('\r\n'):
+        parts = line.split('\t')
+        if len(parts) < 5:
+            continue
+        d = parts[0].strip()
+        if not date_re.match(d):
+            continue
+        try:
+            avg_t = float(parts[2]); min_t = float(parts[3]); max_t = float(parts[4])
+        except ValueError:
+            continue
+        temp_map[d] = {'avg_temp': avg_t, 'min_temp': min_t, 'max_temp': max_t}
+
+print("temp days parsed:", len(temp_map))
+
+# ---------- 2. ASOS humidity/wind/solar files ----------
+asos_files = [
+    'OBS_ASOS_DD_20260716213502.xls', 'OBS_ASOS_DD_20260716213539.xls', # 2024
+    'OBS_ASOS_DD_20260716213737.xls', 'OBS_ASOS_DD_20260716213838.xls', # 2025
+    'OBS_ASOS_DD_20260716213902.xls', 'OBS_ASOS_DD_20260716214039.xls', # 2026
+]
+asos_map = {}
+for fn in asos_files:
+    path = os.path.join(uploads, fn)
+    text = read_euckr(path)
+    lines = text.split('\r\n')
+    for line in lines[1:]:
+        parts = line.split('\t')
+        if len(parts) < 7:
+            continue
+        d = parts[2].strip()
+        if not date_re.match(d):
+            continue
+        try:
+            wind = float(parts[3]) if parts[3].strip() != '' else None
+            rh = float(parts[5]) if parts[5].strip() != '' else None
+            solar = float(parts[6]) if parts[6].strip() != '' else None
+        except ValueError:
+            continue
+        asos_map[d] = {'wind': wind, 'rh': rh, 'solar': solar}
+
+print("asos days parsed:", len(asos_map))
+
+# ---------- 3. Heat illness (Seoul) ----------
+heat = json.load(open('data/heat_illness_seoul.json'))
+heat_map = {}
+for year, days in heat.items():
+    for d, v in days.items():
+        heat_map[d] = v
+
+print("heat illness days parsed:", len(heat_map))
+
+# ---------- 4. Build combined dataset for each year 05-15~07-15 ----------
+def daterange(y):
+    start = datetime.date(y,5,15)
+    end = datetime.date(y,7,15)
+    cur = start
+    while cur <= end:
+        yield cur.isoformat()
+        cur += datetime.timedelta(days=1)
+
+rows = []
+missing_temp = []
+missing_asos = []
+for y in [2024,2025,2026]:
+    for d in daterange(y):
+        t = temp_map.get(d)
+        a = asos_map.get(d)
+        h = heat_map.get(d)
+        if t is None:
+            missing_temp.append(d)
+        if a is None:
+            missing_asos.append(d)
+        rows.append({
+            'date': d,
+            'year': y,
+            'avg_temp': t['avg_temp'] if t else None,
+            'min_temp': t['min_temp'] if t else None,
+            'max_temp': t['max_temp'] if t else None,
+            'wind': a['wind'] if a else None,
+            'rh': a['rh'] if a else None,
+            'solar': a['solar'] if a else None,
+            'seoul_cases': h['seoul_cases'] if h else None,
+            'seoul_deaths': h['seoul_deaths'] if h else None,
+        })
+
+print("total rows:", len(rows))
+print("missing temp dates:", missing_temp)
+print("missing asos dates:", missing_asos)
+print("rows with heat illness missing:", sum(1 for r in rows if r['seoul_cases'] is None))
+
+with open('data/merged_raw.json','w',encoding='utf-8') as f:
+    json.dump(rows, f, ensure_ascii=False, indent=2)
+EOF
+python3 merge_data.py
+      {  "returncode" : 0,
+  "stdout" : "MISSING FILE: ta_20260716205510.xls\nMISSING FILE: ta_20260716205600.xls\nMISSING FILE: ta_20260716205728.xls\ntemp days parsed: 96\nasos days parsed: 186\nheat illness days parsed: 181\ntotal rows: 186\nmissing temp dates: ['2024-05-15', '2024-05-16', '2024-05-17', '2024-05-18', '2024-05-19', '2024-05-20', '2024-05-21', '2024-05-22', '2024-05-23', '2024-05-24', '2024-05-25', '2024-05-26', '2024-05-27', '2024-05-28', '2024-05-29', '2024-05-30', '2024-05-31', '2024-06-01', '2024-06-02', '2024-06-03', '2024-06-04', '2024-06-05', '2024-06-06', '2024-06-07', '2024-06-08', '2024-06-09', '2024-06-10', '2024-06-11', '2024-06-12', '2024-06-13', '2025-05-15', '2025-05-16', '2025-05-17', '2025-05-18', '2025-05-19', '2025-05-20', '2025-05-21', '2025-05-22', '2025-05-23', '2025-05-24', '2025-05-25', '2025-05-26', '2025-05-27', '2025-05-28', '2025-05-29', '2025-05-30', '2025-05-31', '2025-06-01', '2025-06-02', '2025-06-03', '2025-06-04', '2025-06-05', '2025-06-06', '2025-06-07', '2025-06-08', '2025-06-09', '2025-06-10', '2025-06-11', '2025-06-12', '2025-06-13', '2026-05-15', '2026-05-16', '2026-05-17', '2026-05-18', '2026-05-19', '2026-05-20', '2026-05-21', '2026-05-22', '2026-05-23', '2026-05-24', '2026-05-25', '2026-05-26', '2026-05-27', '2026-05-28', '2026-05-29', '2026-05-30', '2026-05-31', '2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04', '2026-06-05', '2026-06-06', '2026-06-07', '2026-06-08', '2026-06-09', '2026-06-10', '2026-06-11', '2026-06-12', '2026-06-13']\nmissing asos dates: []\nrows with heat illness missing: 5\n",
+  "stderr" : ""}
