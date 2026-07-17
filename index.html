@@ -1,416 +1,916 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>서울 온열질환 예측 모델 및 시각화</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>서울 온열질환 예측 지표 분석 | 2024–2026</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+/* ============================================================
+   디자인 컨셉: "관측소 계기판(instrument panel)"
+   - 배경: 짙은 남색(야간 관측소 느낌) + 경보 오렌지/레드 포인트
+   - 데이터 수치는 모노스페이스 폰트로 계기판처럼 표기
+   ============================================================ */
+:root{
+  --bg:#0e1620;
+  --bg-panel:#141f2b;
+  --bg-panel2:#182634;
+  --line:#26374a;
+  --text:#dce6ee;
+  --text-dim:#8fa3b3;
+  --heat1:#ffb14e;   /* 주의 */
+  --heat2:#ff7a3d;   /* 경계 */
+  --heat3:#ff3b3b;   /* 위험 */
+  --cool:#4ecbff;    /* 저온/보조 */
+  --good:#5fe3a1;
+  --mono:'JetBrains Mono','Consolas',monospace;
+  --serif:'Noto Serif KR', serif;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif;
+  line-height:1.6;
+}
+h1,h2,h3{font-weight:800; letter-spacing:-0.02em;}
+.wrap{max-width:1180px; margin:0 auto; padding:0 20px;}
+
+/* ---- 헤더 ---- */
+header.hero{
+  padding:56px 0 40px;
+  border-bottom:1px solid var(--line);
+  background:
+    radial-gradient(ellipse 900px 300px at 15% -10%, rgba(255,122,61,0.18), transparent 60%),
+    radial-gradient(ellipse 700px 300px at 90% 0%, rgba(78,203,255,0.10), transparent 60%);
+}
+.eyebrow{
+  font-family:var(--mono); font-size:12px; letter-spacing:0.18em; color:var(--heat1);
+  text-transform:uppercase; margin-bottom:14px;
+}
+header.hero h1{font-size:clamp(28px,4vw,42px); margin:0 0 12px; color:#fff;}
+header.hero p{color:var(--text-dim); max-width:680px; font-size:15px;}
+.status-strip{
+  display:flex; gap:10px; margin-top:24px; flex-wrap:wrap;
+}
+.status-chip{
+  font-family:var(--mono); font-size:12px; padding:7px 12px; border-radius:20px;
+  border:1px solid var(--line); background:var(--bg-panel); color:var(--text-dim);
+}
+.status-chip.ok{border-color:#2c5a45; color:var(--good);}
+.status-chip.warn{border-color:#5a3a20; color:var(--heat1);}
+.status-chip.err{border-color:#5a2020; color:var(--heat3);}
+
+/* ---- 섹션 공통 ---- */
+section{padding:44px 0;}
+section + section{border-top:1px solid var(--line);}
+.section-head{margin-bottom:22px;}
+.section-num{font-family:var(--mono); font-size:12px; color:var(--heat2); letter-spacing:0.12em;}
+.section-head h2{font-size:22px; margin:6px 0 8px; color:#fff;}
+.section-head p{color:var(--text-dim); font-size:14px; max-width:760px;}
+
+.grid{display:grid; gap:16px;}
+.grid-2{grid-template-columns:1fr 1fr;}
+.grid-3{grid-template-columns:repeat(3,1fr);}
+@media(max-width:800px){.grid-2,.grid-3{grid-template-columns:1fr;}}
+
+.card{
+  background:var(--bg-panel); border:1px solid var(--line); border-radius:10px; padding:18px 20px;
+}
+.card h3{font-size:14px; color:var(--text-dim); margin:0 0 10px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em;}
+
+/* ---- 로딩/에러 배너 ---- */
+#loading-banner, #error-banner{
+  margin:20px 0; padding:16px 18px; border-radius:10px; font-size:14px;
+  display:none;
+}
+#loading-banner{background:#182634; border:1px solid var(--line); color:var(--text-dim);}
+#error-banner{background:#241416; border:1px solid #5a2020; color:#ffb3b3;}
+#error-banner h3{margin:0 0 8px; color:#ff8080; font-size:15px;}
+#error-banner ol{margin:8px 0 0; padding-left:20px;}
+#error-banner code{background:#341a1a; padding:1px 6px; border-radius:4px; font-family:var(--mono);}
+
+/* ---- 지표 테이블 ---- */
+table{width:100%; border-collapse:collapse; font-size:13px;}
+th,td{padding:9px 10px; text-align:right; border-bottom:1px solid var(--line);}
+th:first-child,td:first-child{text-align:left; color:var(--text);}
+th{color:var(--text-dim); font-weight:600; font-family:var(--mono); font-size:11px; text-transform:uppercase;}
+td{font-family:var(--mono); color:var(--text-dim);}
+tr.best td{color:#fff;}
+tr.best td:first-child{color:var(--heat1); font-weight:700;}
+.rank{
+  display:inline-block; width:20px; height:20px; border-radius:5px; background:var(--bg-panel2);
+  text-align:center; line-height:20px; font-size:11px; margin-right:6px; color:var(--text-dim);
+}
+tr.best .rank{background:var(--heat2); color:#111;}
+
+/* ---- 차트 카드 ---- */
+.chart-card{background:var(--bg-panel); border:1px solid var(--line); border-radius:10px; padding:18px 20px 10px;}
+.chart-card canvas{max-height:340px;}
+.chart-controls{display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;}
+select, button, input[type=number]{
+  background:var(--bg-panel2); color:var(--text); border:1px solid var(--line); border-radius:6px;
+  padding:7px 10px; font-size:13px; font-family:inherit;
+}
+button{cursor:pointer; font-weight:600;}
+button.primary{background:linear-gradient(135deg,var(--heat2),var(--heat3)); color:#fff; border:none;}
+button.primary:hover{filter:brightness(1.08);}
+label{font-size:12px; color:var(--text-dim); display:block; margin-bottom:4px;}
+
+/* ---- 예측 시뮬레이터 ---- */
+.predict-form{display:grid; grid-template-columns:repeat(4,1fr); gap:14px;}
+@media(max-width:760px){.predict-form{grid-template-columns:repeat(2,1fr);}}
+.predict-result{
+  margin-top:18px; padding:20px; border-radius:10px; border:1px solid var(--line);
+  display:flex; align-items:center; gap:22px; flex-wrap:wrap;
+}
+.risk-badge{
+  font-family:var(--mono); font-size:13px; padding:10px 16px; border-radius:8px; font-weight:700;
+}
+.big-num{font-family:var(--mono); font-size:34px; font-weight:800; color:#fff;}
+.small-cap{font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em;}
+
+footer{padding:36px 0 60px; color:var(--text-dim); font-size:12px;}
+footer a{color:var(--cool);}
+.caveat{font-size:12.5px; color:var(--text-dim); background:var(--bg-panel2); border-left:3px solid var(--heat2); padding:10px 14px; border-radius:4px; margin-top:14px;}
+.legend-dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px;}
+code.inline{background:var(--bg-panel2); padding:1px 6px; border-radius:4px; font-family:var(--mono); font-size:12px;}
+</style>
 </head>
-<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
+<body>
 
-    <!-- Header -->
-    <header class="bg-gradient-to-r from-red-500 to-orange-500 text-white py-6 px-8 shadow-md">
-        <div class="max-w-7xl mx-auto flex justify-between items-center">
-            <div>
-                <h1 class="text-3xl font-bold">서울 지역 온열질환 기후 예측 모델 분석기</h1>
-                <p class="text-sm mt-1 opacity-90">2024년 ~ 2026년 (5월 20일 ~ 7월 15일) 데이터 분석</p>
-            </div>
-            <span class="bg-white text-red-600 font-semibold px-4 py-2 rounded-full shadow-sm text-sm">로컬 파일 로딩 지원</span>
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">SEOUL · HEAT ILLNESS EARLY-WARNING ANALYSIS · 2024–2026</div>
+    <h1>온열질환자 발생과 연관된<br>복합 기상요인 · 임계값 분석</h1>
+    <p>서울(지점 108) 2024~2026년 5월 20일~7월 15일 자료를 바탕으로, 일 최고/평균 기온과 추정 WBGT(습구흑구온도) 등 복합 기상지표와 질병관리청 온열질환 응급실감시체계 신고 건수의 상관관계를 분석하고, 온열질환 급증을 가장 잘 설명하는 지표와 임계값을 통계적으로 탐색합니다.</p>
+    <div class="status-strip" id="status-strip">
+      <span class="status-chip">데이터 로딩 대기 중…</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="loading-banner">데이터를 불러오는 중입니다…</div>
+  <div id="error-banner"></div>
+</div>
+
+<main class="wrap" id="app-main" style="display:none;">
+
+  <!-- 0. 데이터 개요 -->
+  <section id="sec-overview">
+    <div class="section-head">
+      <div class="section-num">01 · DATA OVERVIEW</div>
+      <h2>불러온 데이터 개요 및 결측치 점검</h2>
+      <p>18개 원본 파일(기온 9, 습도 6, 온열질환 3)을 병합하여 연도별 일자료를 구성했습니다. 병합 과정에서 날짜가 누락된 경우 아래에 표시됩니다.</p>
+    </div>
+    <div class="grid grid-3" id="overview-cards"></div>
+    <div id="missing-report" class="caveat" style="display:none;"></div>
+  </section>
+
+  <!-- 1. 지표 상관/임계값 분석 -->
+  <section id="sec-corr">
+    <div class="section-head">
+      <div class="section-num">02 · INDICATOR RANKING</div>
+      <h2>지표별 상관관계 · ROC 분석 · 최적 임계값</h2>
+      <p>온열질환자 수 상위 25%(다발생일)를 기준으로 각 지표의 판별력(AUC)과 Pearson 상관계수를 계산하고, Youden's J 통계량이 최대가 되는 지점을 최적 임계값으로 선정했습니다.</p>
+    </div>
+    <div class="chart-card">
+      <table id="indicator-table">
+        <thead>
+          <tr><th>지표</th><th>Pearson r</th><th>선형회귀 R²</th><th>ROC AUC</th><th>최적 임계값</th><th>임계값 이상일 평균 환자수</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="grid grid-2" style="margin-top:16px;">
+      <div class="chart-card">
+        <h3 style="margin-bottom:10px;color:var(--text-dim);font-size:13px;">지표별 |Pearson r| 비교</h3>
+        <canvas id="chart-corr-bar"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3 style="margin-bottom:10px;color:var(--text-dim);font-size:13px;">최상위 지표 ROC 곡선</h3>
+        <canvas id="chart-roc"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. 시계열 -->
+  <section id="sec-timeseries">
+    <div class="section-head">
+      <div class="section-num">03 · TIME SERIES</div>
+      <h2>일별 기상지표 &amp; 온열질환자 수 추이</h2>
+    </div>
+    <div class="chart-card">
+      <div class="chart-controls">
+        <div><label>연도</label>
+          <select id="ts-year">
+            <option value="2024">2024</option>
+            <option value="2025">2025</option>
+            <option value="2026" selected>2026</option>
+            <option value="all">전체(연속 표시)</option>
+          </select>
         </div>
-    </header>
-
-    <!-- Main Content -->
-    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-8">
-        
-        <!-- Error & Status Container -->
-        <div id="status-container" class="mb-6 hidden">
-            <div id="status-box" class="p-4 rounded-lg shadow-inner">
-                <p id="status-message" class="font-medium whitespace-pre-line"></p>
-            </div>
+        <div><label>기상 지표</label>
+          <select id="ts-indicator"></select>
         </div>
+      </div>
+      <canvas id="chart-timeseries" style="max-height:380px;"></canvas>
+    </div>
+  </section>
 
-        <!-- File Upload Section -->
-        <section class="bg-white p-6 rounded-xl shadow-md mb-8">
-            <h2 class="text-xl font-semibold mb-2 text-gray-700">📂 분석할 CSV 파일 선택하기 (직접 업로드)</h2>
-            <p class="text-sm text-gray-500 mb-6">
-                서버 에러를 방지하기 위해 내 컴퓨터의 CSV 파일들을 직접 선택하여 분석합니다. 한글 파일명, 영어 파일명 상관없이 **한 번에 모두 드래그하거나 다중 선택**하여 올려주시면 똑똑하게 자동 분류하여 분석을 시작합니다.
-            </p>
-            
-            <div class="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-8 bg-gray-50 hover:bg-gray-100 transition duration-200 cursor-pointer" onclick="document.getElementById('file-input').click()">
-                <svg class="w-12 h-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                <p class="mb-2 text-sm text-gray-500"><span class="font-semibold">클릭하여 파일 선택</span> 또는 드래그 앤 드롭</p>
-                <p class="text-xs text-gray-400">전체 18개 CSV 파일을 한꺼번에 선택해 주세요.</p>
-                <input id="file-input" type="file" multiple class="hidden" accept=".csv" />
-            </div>
+  <!-- 3. 산점도 -->
+  <section id="sec-scatter">
+    <div class="section-head">
+      <div class="section-num">04 · SCATTER &amp; REGRESSION</div>
+      <h2>지표 대 온열질환자 수 산점도</h2>
+    </div>
+    <div class="chart-card">
+      <div class="chart-controls">
+        <div><label>기상 지표 선택</label>
+          <select id="sc-indicator"></select>
+        </div>
+      </div>
+      <canvas id="chart-scatter" style="max-height:380px;"></canvas>
+    </div>
+  </section>
 
-            <!-- Loaded Files Status -->
-            <div id="file-status-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs mt-6">
-                <div class="p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <span class="font-bold text-red-700">1. 온열질환 데이터 (<span id="count-patients">0</span>/3)</span>
-                    <ul id="list-patients" class="list-disc list-inside mt-1 text-gray-600"></ul>
-                </div>
-                <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <span class="font-bold text-blue-700">2. 기온 데이터 (<span id="count-temps">0</span>/9)</span>
-                    <ul id="list-temps" class="list-disc list-inside mt-1 text-gray-600"></ul>
-                </div>
-                <div class="p-3 bg-teal-50 border border-teal-200 rounded-lg">
-                    <span class="font-bold text-teal-700">3. 습도 데이터 (<span id="count-hums">0</span>/6)</span>
-                    <ul id="list-hums" class="list-disc list-inside mt-1 text-gray-600"></ul>
-                </div>
-            </div>
+  <!-- 4. 예측 시뮬레이터 -->
+  <section id="sec-predict">
+    <div class="section-head">
+      <div class="section-num">05 · RISK ESTIMATOR</div>
+      <h2>다중회귀 기반 예상 환자수 · 위험도 추정</h2>
+      <p>7개 지표(최고/평균기온, 최고/평균 WBGT, 평균습도, 평균풍속, 일사량)를 사용한 다중선형회귀 모델로 예상 온열질환자 수를 추정합니다. 표본이 3년치(약 170일)에 불과해 참고용 추정치입니다.</p>
+    </div>
+    <div class="chart-card">
+      <div class="predict-form">
+        <div><label>일 최고기온(℃)</label><input type="number" id="in-maxT" step="0.1" value="33"></div>
+        <div><label>일 평균기온(℃)</label><input type="number" id="in-avgT" step="0.1" value="27"></div>
+        <div><label>평균 상대습도(%)</label><input type="number" id="in-rh" step="0.1" value="60"></div>
+        <div><label>평균 풍속(m/s)</label><input type="number" id="in-wind" step="0.1" value="2.2"></div>
+        <div><label>합계 일사량(MJ/m²)</label><input type="number" id="in-solar" step="0.1" value="22"></div>
+        <div style="align-self:end;"><button class="primary" id="btn-predict">위험도 계산</button></div>
+      </div>
+      <div class="predict-result" id="predict-result" style="display:none;"></div>
+    </div>
+  </section>
 
-            <div class="mt-6 flex justify-center">
-                <button id="btn-process" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold py-3 px-8 rounded-lg shadow-md transition duration-200 transform hover:scale-105 opacity-50 cursor-not-allowed" disabled>
-                    ⚡ 업로드된 데이터 분석 및 시각화 실행
-                </button>
-            </div>
-        </section>
+  <!-- 5. 한계 및 방법론 -->
+  <section id="sec-notes">
+    <div class="section-head">
+      <div class="section-num">06 · METHODOLOGY &amp; LIMITATIONS</div>
+      <h2>WBGT 산출식 · 데이터 한계</h2>
+    </div>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>WBGT 추정식(근사)</h3>
+        <p style="font-size:13px;color:var(--text-dim);">
+        실제 습구·흑구 온도계 관측값이 없어, 기온과 상대습도만으로 실외 WBGT를 근사하는 호주 기상청(BOM) 간이식을 사용했습니다.<br><br>
+        <code class="inline">e = RH/100 × 6.112 × exp(17.62T / (243.12+T))</code><br>
+        <code class="inline">WBGT ≈ 0.567T + 0.393e + 3.94</code><br><br>
+        일 평균 WBGT는 평균기온·평균습도를, 일 최고 WBGT는 최고기온과 그날의 평균습도를 대입해 근사했습니다(최고기온 시각의 습도가 별도 관측되지 않아 발생하는 오차가 있습니다). 풍속·일사량은 WBGT 산출식에는 직접 반영하지 못했지만, 별도의 독립 지표로 상관/회귀 분석에 포함했습니다.
+        </p>
+      </div>
+      <div class="card">
+        <h3>데이터 충분성에 대한 안내</h3>
+        <p style="font-size:13px;color:var(--text-dim);" id="data-sufficiency-note">
+        분석 대상은 서울 단일 지점, 3개 연도(2024~2026), 총 약 170일의 일자료입니다. 상관관계·임계값 탐색에는 활용 가능하지만, 신뢰할 수 있는 <b>기후 예측 프로그램</b>을 만들기에는 다음이 부족합니다.
+        </p>
+        <ul style="font-size:13px;color:var(--text-dim); padding-left:18px;">
+          <li>연도 수(3개)가 적어 연도 간 변동성·기후변화 추세를 통계적으로 검증하기 어려움</li>
+          <li>실제 WBGT 관측값(흑구온도) 부재 → 근사식에 의한 오차 존재</li>
+          <li>강수량·미세먼지·열대야 여부 등 다른 온열질환 관련 변수 미포함</li>
+          <li>연령·직업 등 응급실 감시체계의 인구학적 세부값은 서울 단일 수치로 축약됨</li>
+          <li>표본 수(약 170일)로 인한 다중회귀 과적합 가능성 — 예측값은 참고용</li>
+        </ul>
+      </div>
+    </div>
+  </section>
 
-        <!-- Dashboard Section (Hidden by default) -->
-        <section id="dashboard" class="hidden space-y-8">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div class="bg-white p-6 rounded-xl shadow-md border-t-4 border-red-500">
-                    <h3 class="text-xs font-semibold text-gray-400 uppercase">총 누적 온열질환자 (서울)</h3>
-                    <p id="stat-patients" class="text-3xl font-bold text-gray-800 mt-2">0명</p>
-                </div>
-                <div class="bg-white p-6 rounded-xl shadow-md border-t-4 border-orange-500">
-                    <h3 class="text-xs font-semibold text-gray-400 uppercase">분석 기간 내 최고 기온</h3>
-                    <p id="stat-max-temp" class="text-3xl font-bold text-gray-800 mt-2">0.0℃</p>
-                </div>
-                <div class="bg-white p-6 rounded-xl shadow-md border-t-4 border-amber-500">
-                    <h3 class="text-xs font-semibold text-gray-400 uppercase">분석 기간 내 최고 WBGT</h3>
-                    <p id="stat-max-wbgt" class="text-3xl font-bold text-gray-800 mt-2">0.0</p>
-                </div>
-                <div class="bg-white p-6 rounded-xl shadow-md border-t-4 border-teal-500">
-                    <h3 class="text-xs font-semibold text-gray-400 uppercase">분석 성공률 (일자 매칭)</h3>
-                    <p id="stat-match-days" class="text-3xl font-bold text-gray-800 mt-2">0일</p>
-                </div>
-            </div>
+</main>
 
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div class="bg-white p-6 rounded-xl shadow-md">
-                    <h3 class="text-lg font-semibold text-gray-700 mb-4">📈 일별 지표 추이 및 온열질환자 상관관계</h3>
-                    <div class="relative h-96">
-                        <canvas id="trendChart"></canvas>
-                    </div>
-                </div>
-                <div class="bg-white p-6 rounded-xl shadow-md">
-                    <h3 class="text-lg font-semibold text-gray-700 mb-4">📊 지표별 온열질환 발생 빈도 (산점도)</h3>
-                    <div class="relative h-96">
-                        <canvas id="scatterChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </section>
-    </main>
+<footer>
+  <div class="wrap">
+    자료: 질병관리청 온열질환 응급실감시체계(표본감시, 잠정자료) · 기상자료개방포털 서울(108) 기온/기상 관측자료.<br>
+    본 페이지의 WBGT 값은 실측이 아닌 근사 추정치이며, 실제 온열질환 예방 지침의 기준으로 사용해서는 안 됩니다.
+  </div>
+</footer>
 
-    <footer class="bg-gray-800 text-gray-400 py-6 px-8 text-center text-xs">
-        <p>© 2026 서울 온열질환 기후데이터 융합 프로젝트.</p>
-    </footer>
+<script>
+/* =========================================================================================
+   서울 온열질환 예측 지표 분석 대시보드
+   -----------------------------------------------------------------------------------------
+   이 스크립트는 아래 순서로 동작합니다.
+     1) FILES 설정에 정의된 원본 CSV/XLS(실제로는 텍스트) 파일들을 fetch로 불러온다.
+        - 파일마다 실제 인코딩(UTF-8 또는 EUC-KR)과 구분자(콤마/탭)가 다르므로 파일별로 지정한다.
+     2) 각 파일을 파싱해 "날짜별 레코드"로 만들고, 연도별로 기온/습도/온열질환 데이터를 병합한다.
+     3) 병합된 데이터로 WBGT(근사), 상관계수, 로지스틱형 임계값(ROC/AUC), 선형·다중회귀를 계산한다.
+     4) Chart.js로 시계열/산점도/ROC/막대 차트를 그리고, 예측 폼에 회귀 예측 기능을 연결한다.
+   ========================================================================================= */
 
-    <script>
-        let uploadedFiles = { patients: [], temps: [], hums: [] };
-        let mergedData = {};
+// ---------- 1. 원본 파일 목록 (실제 업로드 파일명을 그대로 사용) ----------
+// type: temp(기온) / humid(습도) / illness(온열질환, PDF 원자료를 CSV로 변환한 파일)
+const FILES = {
+  temp: [
+    { year: 2024, file: '24_515_613기온_csv.csv', enc: 'utf-8' },
+    { year: 2024, file: '24_614_713기온_csv.csv', enc: 'utf-8' },
+    { year: 2024, file: '24_2기온_csv.xls',        enc: 'euc-kr' },
+    { year: 2025, file: '25_515_613기온_csv.csv', enc: 'utf-8' },
+    { year: 2025, file: '25_614_713기온_csv.xls',  enc: 'euc-kr' },
+    { year: 2025, file: '25_2기온_csv.xls',        enc: 'euc-kr' },
+    { year: 2026, file: '26_515_0613기온_csv.csv',enc: 'utf-8' },
+    { year: 2026, file: '26_614_713기온_csv.xls',  enc: 'euc-kr' },
+    { year: 2026, file: '26_2기온_csv.xls',        enc: 'euc-kr' },
+  ],
+  humid: [
+    { year: 2024, file: '24_515_614습도_csv.xls', enc: 'euc-kr' },
+    { year: 2024, file: '24_615_715습도_csv.xls', enc: 'euc-kr' },
+    { year: 2025, file: '25_515_614습도_csv.xls', enc: 'euc-kr' },
+    { year: 2025, file: '25_615_715습도_csv.xls', enc: 'euc-kr' },
+    { year: 2026, file: '26_515_614습도_csv.xls', enc: 'euc-kr' },
+    { year: 2026, file: '26_615_715습도_csv.xls', enc: 'euc-kr' },
+  ],
+  illness: [
+    { year: 2024, file: '24온열질환.csv', enc: 'utf-8' },
+    { year: 2025, file: '25온열질환.csv', enc: 'utf-8' },
+    { year: 2026, file: '26온열질환.csv', enc: 'utf-8' },
+  ]
+};
 
-        const fileInput = document.getElementById('file-input');
-        const btnProcess = document.getElementById('btn-process');
-        const statusContainer = document.getElementById('status-container');
-        const statusBox = document.getElementById('status-box');
-        const statusMsg = document.getElementById('status-message');
-        const dashboard = document.getElementById('dashboard');
+// 분석 대상 기간(모든 연도 공통, 24년 온열질환 자료가 05-20부터 존재하므로 이에 맞춤)
+const ANALYSIS_START = '05-20';
+const ANALYSIS_END   = '07-15';
 
-        fileInput.addEventListener('change', handleFileSelect);
-        btnProcess.addEventListener('click', startAnalysis);
+// ---------- 2. 파일 로딩 & 파싱 유틸 ----------
 
-        function showStatus(message, type = 'info') {
-            statusContainer.classList.remove('hidden');
-            statusMsg.textContent = message;
-            if (type === 'error') {
-                statusBox.className = "p-4 rounded-lg bg-red-100 text-red-800 border border-red-300";
-            } else if (type === 'success') {
-                statusBox.className = "p-4 rounded-lg bg-green-100 text-green-800 border border-green-300";
-            } else {
-                statusBox.className = "p-4 rounded-lg bg-blue-100 text-blue-800 border border-blue-300";
-            }
-        }
+async function fetchAndDecode(file, enc){
+  const res = await fetch(file);
+  if(!res.ok){
+    throw { code:'HTTP', file, status:res.status };
+  }
+  const buf = await res.arrayBuffer();
+  try{
+    const decoder = new TextDecoder(enc);
+    return decoder.decode(buf);
+  }catch(e){
+    throw { code:'DECODE', file, message:e.message };
+  }
+}
 
-        function handleFileSelect(e) {
-            const files = Array.from(e.target.files);
-            uploadedFiles = { patients: [], temps: [], hums: [] };
+// 헤더에 특정 키워드가 포함된 줄을 찾아, 그 아래를 데이터로 파싱한다.
+// 기온 파일은 앞에 5~6줄의 메타정보(검색조건 등)가 붙어있어 헤더를 직접 탐색해야 한다.
+function parseDelimitedTable(text, headerKeyword){
+  const lines = text.split(/\r\n|\n|\r/);
+  let headerIdx = -1;
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].includes(headerKeyword)){ headerIdx = i; break; }
+  }
+  if(headerIdx === -1){
+    throw { code:'HEADER_NOT_FOUND', headerKeyword };
+  }
+  const headerLine = lines[headerIdx];
+  const delim = headerLine.includes('\t') ? '\t' : ',';
+  const header = headerLine.split(delim).map(s=>s.trim());
+  const rows = [];
+  for(let i=headerIdx+1;i<lines.length;i++){
+    let line = lines[i];
+    if(line === undefined) continue;
+    line = line.replace(/^\t+/, '').trim(); // 일부 파일에 섞인 선행 탭 제거
+    if(line.length === 0) continue;
+    const cells = line.split(delim).map(s=>s.trim());
+    if(cells.length < 2) continue;
+    const rec = {};
+    header.forEach((h,idx)=>{ rec[h] = cells[idx]; });
+    rows.push(rec);
+  }
+  return rows;
+}
 
-            // 파일 이름 패턴 매칭 및 분류
-            files.forEach(file => {
-                const name = file.name;
-                if (name.includes('온열질환') || name.includes('patients')) {
-                    uploadedFiles.patients.push(file);
-                } else if (name.includes('기온') || name.includes('temp')) {
-                    uploadedFiles.temps.push(file);
-                } else if (name.includes('습도') || name.includes('hum')) {
-                    uploadedFiles.hums.push(file);
-                }
-            });
+function toNum(v){
+  if(v===undefined || v===null || v==='') return NaN;
+  const n = parseFloat(String(v).replace(/,/g,''));
+  return n;
+}
 
-            // UI 업데이트
-            updateFileListUI();
+// ---------- 3. WBGT 근사 계산 ----------
+function vaporPressure(T, RH){
+  return (RH/100) * 6.112 * Math.exp((17.62*T)/(243.12+T));
+}
+function wbgtEstimate(T, RH){
+  if(!isFinite(T) || !isFinite(RH)) return NaN;
+  const e = vaporPressure(T,RH);
+  return 0.567*T + 0.393*e + 3.94;
+}
 
-            if (uploadedFiles.patients.length > 0 || uploadedFiles.temps.length > 0 || uploadedFiles.hums.length > 0) {
-                btnProcess.disabled = false;
-                btnProcess.classList.remove('opacity-50', 'cursor-not-allowed');
-                showStatus(`${files.length}개의 파일을 올렸습니다. 아래 목록을 확인한 뒤 분석 버튼을 눌러주세요!`, "info");
-            }
-        }
+// ---------- 4. 통계 유틸 ----------
+function mean(arr){ return arr.reduce((a,b)=>a+b,0)/arr.length; }
+function pearson(xs, ys){
+  const n = xs.length;
+  const mx = mean(xs), my = mean(ys);
+  let num=0, dx2=0, dy2=0;
+  for(let i=0;i<n;i++){
+    const dx = xs[i]-mx, dy = ys[i]-my;
+    num += dx*dy; dx2 += dx*dx; dy2 += dy*dy;
+  }
+  const denom = Math.sqrt(dx2*dy2);
+  return denom===0 ? 0 : num/denom;
+}
+function linreg(xs, ys){
+  const n = xs.length;
+  const mx = mean(xs), my = mean(ys);
+  let num=0, den=0;
+  for(let i=0;i<n;i++){ num += (xs[i]-mx)*(ys[i]-my); den += (xs[i]-mx)**2; }
+  const slope = den===0?0:num/den;
+  const intercept = my - slope*mx;
+  const r = pearson(xs,ys);
+  return { slope, intercept, r2: r*r };
+}
+function percentile(arr, p){
+  const s = [...arr].sort((a,b)=>a-b);
+  const idx = (p/100)*(s.length-1);
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  if(lo===hi) return s[lo];
+  return s[lo] + (s[hi]-s[lo])*(idx-lo);
+}
 
-        function updateFileListUI() {
-            const listP = document.getElementById('list-patients');
-            const listT = document.getElementById('list-temps');
-            const listH = document.getElementById('list-hums');
+// ROC/AUC: outcomeBin(0/1) vs 지표값. 지표가 높을수록 발생 가능성이 높다고 가정(양의 방향).
+function rocAnalysis(values, outcomeBin){
+  const uniqSorted = [...new Set(values)].sort((a,b)=>a-b);
+  const thresholds = [uniqSorted[0]-1, ...uniqSorted, uniqSorted[uniqSorted.length-1]+1];
+  const P = outcomeBin.reduce((a,b)=>a+b,0);
+  const N = outcomeBin.length - P;
+  let points = [];
+  let bestJ = -Infinity, bestThr = uniqSorted[0];
+  for(const thr of thresholds){
+    let tp=0, fp=0;
+    for(let i=0;i<values.length;i++){
+      const pred = values[i] >= thr ? 1 : 0;
+      if(pred===1 && outcomeBin[i]===1) tp++;
+      if(pred===1 && outcomeBin[i]===0) fp++;
+    }
+    const tpr = P>0? tp/P : 0;
+    const fpr = N>0? fp/N : 0;
+    points.push({thr, tpr, fpr});
+    const J = tpr - fpr;
+    if(J > bestJ){ bestJ = J; bestThr = thr; }
+  }
+  // AUC (사다리꼴 공식, FPR 오름차순 정렬)
+  const sorted = [...points].sort((a,b)=>a.fpr-b.fpr || a.tpr-b.tpr);
+  let auc = 0;
+  for(let i=1;i<sorted.length;i++){
+    const w = sorted[i].fpr - sorted[i-1].fpr;
+    const h = (sorted[i].tpr + sorted[i-1].tpr)/2;
+    auc += w*h;
+  }
+  return { points: sorted, bestThr, bestJ, auc };
+}
 
-            listP.innerHTML = uploadedFiles.patients.map(f => `<li>${f.name}</li>`).join('');
-            listT.innerHTML = uploadedFiles.temps.map(f => `<li>${f.name}</li>`).join('');
-            listH.innerHTML = uploadedFiles.hums.map(f => `<li>${f.name}</li>`).join('');
+// 다중선형회귀: 정규방정식 (X'X)^-1 X'y, 가우스-조르당 소거법으로 역행렬 계산
+function multiLinReg(X, y){
+  const n = X.length, p = X[0].length + 1; // +1 = 절편
+  const Xa = X.map(row => [1, ...row]);
+  // Xt * X
+  const XtX = Array.from({length:p}, ()=>new Array(p).fill(0));
+  const Xty = new Array(p).fill(0);
+  for(let i=0;i<n;i++){
+    for(let a=0;a<p;a++){
+      Xty[a] += Xa[i][a]*y[i];
+      for(let b=0;b<p;b++){
+        XtX[a][b] += Xa[i][a]*Xa[i][b];
+      }
+    }
+  }
+  // 가우스-조르당으로 [XtX | Xty] 해 구하기
+  const M = XtX.map((row,i)=>[...row, Xty[i]]);
+  for(let col=0; col<p; col++){
+    // 피벗 선택
+    let pivot = col;
+    for(let r=col+1;r<p;r++){ if(Math.abs(M[r][col])>Math.abs(M[pivot][col])) pivot=r; }
+    [M[col], M[pivot]] = [M[pivot], M[col]];
+    const pv = M[col][col] || 1e-9;
+    for(let c=col;c<=p;c++) M[col][c] /= pv;
+    for(let r=0;r<p;r++){
+      if(r===col) continue;
+      const factor = M[r][col];
+      for(let c=col;c<=p;c++) M[r][c] -= factor*M[col][c];
+    }
+  }
+  return M.map(row=>row[p]); // [intercept, b1, b2, ...]
+}
 
-            document.getElementById('count-patients').textContent = uploadedFiles.patients.length;
-            document.getElementById('count-temps').textContent = uploadedFiles.temps.length;
-            document.getElementById('count-hums').textContent = uploadedFiles.hums.length;
-        }
+// ---------- 5. 데이터 로딩 & 병합 파이프라인 ----------
+let DATASET = []; // 최종 병합 레코드 배열
+let MISSING_DATES = [];
+const INDICATORS = [
+  { key:'maxTemp', label:'일 최고기온(℃)' },
+  { key:'avgTemp', label:'일 평균기온(℃)' },
+  { key:'wbgtMax',  label:'일 최고 WBGT(추정,℃)' },
+  { key:'wbgtAvg',  label:'일 평균 WBGT(추정,℃)' },
+  { key:'avgRH',    label:'평균 상대습도(%)' },
+  { key:'windSpeed',label:'평균 풍속(m/s)' },
+  { key:'solarRad', label:'합계 일사량(MJ/m²)' },
+  { key:'tempRange',label:'일교차(℃, 최고-최저)' },
+];
 
-        // 로컬 파일을 비동기적으로 읽어오는 래퍼 함수
-        function parseLocalCSV(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const text = e.target.result;
-                    Papa.parse(text, {
-                        header: true,
-                        skipEmptyLines: true,
-                        complete: (results) => resolve(results.data),
-                        error: (err) => reject(err)
-                    });
-                };
-                reader.onerror = () => reject(new Error(`${file.name} 파일을 읽을 수 없습니다.`));
-                // 한글 디코더 대응
-                reader.readAsText(file, 'euc-kr');
-            });
-        }
+function dateInRange(dateStr){
+  const md = dateStr.slice(5); // MM-DD
+  return md >= ANALYSIS_START && md <= ANALYSIS_END;
+}
 
-        async function startAnalysis() {
-            showStatus("컴퓨터에 올려진 데이터 파일을 파싱하는 중입니다...", "info");
-            mergedData = {};
+async function loadAll(){
+  const statusStrip = document.getElementById('status-strip');
+  statusStrip.innerHTML = '';
+  const loadedChips = {};
 
-            try {
-                // 1. 온열질환 파싱
-                for (const file of uploadedFiles.patients) {
-                    const data = await parseLocalCSV(file);
-                    processPatientData(data);
-                }
-                // 2. 기온 파싱
-                for (const file of uploadedFiles.temps) {
-                    const data = await parseLocalCSV(file);
-                    processTempData(data);
-                }
-                // 3. 습도 파싱
-                for (const file of uploadedFiles.hums) {
-                    const data = await parseLocalCSV(file);
-                    processHumData(data);
-                }
+  function chip(label, cls){
+    const el = document.createElement('span');
+    el.className = 'status-chip '+(cls||'');
+    el.textContent = label;
+    statusStrip.appendChild(el);
+    return el;
+  }
 
-                const finalData = finalizeMetrics();
+  const byDate = {}; // { 'YYYY-MM-DD': {year, date, ...fields} }
 
-                if (finalData.length === 0) {
-                    throw new Error("서울에 매칭되는 온습도/기온/질환 결합 데이터가 없습니다.\n올바른 기후 파일들과 2024~2026년 데이터가 모두 다같이 선택되었는지 확인해 주세요.");
-                }
+  // --- 기온 ---
+  for(const f of FILES.temp){
+    const c = chip(f.file+' 로딩중…');
+    let text;
+    try{ text = await fetchAndDecode(f.file, f.enc); }
+    catch(err){ showFileError(err); throw err; }
+    let rows;
+    try{ rows = parseDelimitedTable(text, '날짜'); }
+    catch(err){ showParseError(f.file, err); throw err; }
+    rows.forEach(r=>{
+      const date = r['날짜'];
+      if(!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      byDate[date] = byDate[date] || { date, year: parseInt(date.slice(0,4)) };
+      byDate[date].avgTemp = toNum(r['평균기온(℃)']);
+      byDate[date].minTemp = toNum(r['최저기온(℃)']);
+      byDate[date].maxTemp = toNum(r['최고기온(℃)']);
+    });
+    c.classList.add('ok'); c.textContent = f.file+' ✓ ('+rows.length+'행)';
+  }
 
-                showStatus("분석 성공! 서울 지역 온열 예측 시각화 대시보드가 정상적으로 로드되었습니다.", "success");
-                dashboard.classList.remove('hidden');
-                renderDashboard(finalData);
+  // --- 습도 ---
+  for(const f of FILES.humid){
+    const c = chip(f.file+' 로딩중…');
+    let text;
+    try{ text = await fetchAndDecode(f.file, f.enc); }
+    catch(err){ showFileError(err); throw err; }
+    let rows;
+    try{ rows = parseDelimitedTable(text, '지점명'); }
+    catch(err){ showParseError(f.file, err); throw err; }
+    rows.forEach(r=>{
+      const date = r['일시'];
+      if(!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      byDate[date] = byDate[date] || { date, year: parseInt(date.slice(0,4)) };
+      byDate[date].windSpeed = toNum(r['평균 풍속(m/s)']);
+      byDate[date].avgRH     = toNum(r['평균 상대습도(%)']);
+      byDate[date].solarRad  = toNum(r['합계 일사량(MJ/m2)']);
+    });
+    c.classList.add('ok'); c.textContent = f.file+' ✓ ('+rows.length+'행)';
+  }
 
-            } catch (error) {
-                showStatus(`🚨 에러 발생:\n${error.message}`, "error");
-                console.error(error);
-            }
-        }
+  // --- 온열질환 ---
+  for(const f of FILES.illness){
+    const c = chip(f.file+' 로딩중…');
+    let text;
+    try{ text = await fetchAndDecode(f.file, f.enc); }
+    catch(err){ showFileError(err); throw err; }
+    let rows;
+    try{ rows = parseDelimitedTable(text, '날짜'); }
+    catch(err){ showParseError(f.file, err); throw err; }
+    rows.forEach(r=>{
+      const date = r['날짜'];
+      if(!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      byDate[date] = byDate[date] || { date, year: parseInt(date.slice(0,4)) };
+      byDate[date].patients = toNum(r['온열질환자']);
+      byDate[date].deaths   = toNum(r['추정사망자']);
+    });
+    c.classList.add('ok'); c.textContent = f.file+' ✓ ('+rows.length+'행)';
+  }
 
-        function processPatientData(rows) {
-            rows.forEach(row => {
-                const dateKey = row['증상발생일'] || row['날짜'] || Object.values(row)[0];
-                if (!dateKey || !dateKey.includes('-')) return;
-                const cleanDate = dateKey.trim();
-                const seoulPatients = parseInt(row['서울'] || 0, 10);
+  // --- 병합 + 분석기간 필터 + 결측 점검 ---
+  const dates = Object.keys(byDate).filter(dateInRange).sort();
+  const missing = [];
+  const requiredFields = ['avgTemp','maxTemp','minTemp','avgRH','windSpeed','solarRad','patients'];
+  dates.forEach(d=>{
+    const rec = byDate[d];
+    const missingFields = requiredFields.filter(k => rec[k]===undefined || isNaN(rec[k]));
+    if(missingFields.length>0){
+      missing.push({date:d, fields:missingFields});
+      return; // 결측 레코드는 분석에서 제외
+    }
+    rec.tempRange = rec.maxTemp - rec.minTemp;
+    rec.wbgtAvg = wbgtEstimate(rec.avgTemp, rec.avgRH);
+    rec.wbgtMax = wbgtEstimate(rec.maxTemp, rec.avgRH);
+    DATASET.push(rec);
+  });
+  MISSING_DATES = missing;
 
-                if (!mergedData[cleanDate]) {
-                    mergedData[cleanDate] = { date: cleanDate, patients: 0, avgTemp: null, maxTemp: null, rh: null, wbgt: null };
-                }
-                mergedData[cleanDate].patients += isNaN(seoulPatients) ? 0 : seoulPatients;
-            });
-        }
+  DATASET.sort((a,b)=> a.date < b.date ? -1 : 1);
+  return DATASET;
+}
 
-        function processTempData(rows) {
-            rows.forEach(row => {
-                const dateKey = row['일시'] || row['날짜'] || Object.values(row)[0];
-                const spotName = row['지점명'] || row['지점'];
-                if (!dateKey || (spotName && !spotName.includes('서울') && spotName !== '108')) return;
+function showFileError(err){
+  const box = document.getElementById('error-banner');
+  box.style.display = 'block';
+  box.innerHTML = `
+    <h3>⚠ 파일을 불러오지 못했습니다: ${err.file}</h3>
+    <p>다음 원인이 가장 흔합니다. 순서대로 확인해 주세요.</p>
+    <ol>
+      <li><b>로컬 파일을 그냥 더블클릭해서 열었을 때(file:// 로 접속)</b> — 브라우저 보안 정책(CORS)상 로컬 파일을 fetch로 읽을 수 없습니다.
+        터미널에서 이 폴더로 이동한 뒤 <code>python -m http.server 8000</code> 실행 후 <code>http://localhost:8000</code> 으로 접속하거나,
+        VSCode의 "Live Server" 확장을 사용하거나, GitHub Pages에 배포해서 열어주세요.</li>
+      <li><b>파일명이 정확히 일치하지 않음</b> — <code>${err.file}</code> 파일이 <code>index.html</code>과 <b>같은 폴더</b>에, 이름 그대로(대소문자·언더바 포함) 있는지 확인하세요.</li>
+      <li><b>GitHub Pages 배포 시 대소문자/한글 파일명 이슈</b> — 일부 환경에서 한글 파일명이 깨질 수 있습니다. 저장소에 업로드 후 파일명이 그대로 보이는지 확인하세요.</li>
+      <li>HTTP 상태 코드: <code>${err.status ?? 'N/A'}</code></li>
+    </ol>`;
+  document.getElementById('loading-banner').style.display='none';
+}
+function showParseError(file, err){
+  const box = document.getElementById('error-banner');
+  box.style.display = 'block';
+  box.innerHTML = `
+    <h3>⚠ 파일 형식을 해석하지 못했습니다: ${file}</h3>
+    <p>파일은 불러왔지만 예상한 헤더(${err.headerKeyword||''})를 찾지 못했습니다. 파일이 원본 그대로(내용 수정 없이) 업로드되었는지 확인해 주세요.
+    엑셀에서 열었다가 "다른 이름으로 저장"한 경우 구분자나 헤더 줄 수가 바뀌었을 수 있습니다.</p>`;
+  document.getElementById('loading-banner').style.display='none';
+}
 
-                const cleanDate = dateKey.trim();
-                const avgT = parseFloat(row['평균기온(°C)'] || row['평균기온(℃)']);
-                const maxT = parseFloat(row['최고기온(°C)'] || row['최고기온(℃)']);
+// ---------- 6. 분석 실행 & 렌더링 ----------
+let INDICATOR_STATS = [];
 
-                if (isNaN(avgT) || isNaN(maxT)) return;
+function runAnalysis(){
+  const patients = DATASET.map(d=>d.patients);
+  const p75 = percentile(patients, 75);
+  const outcomeBin = patients.map(v => v >= p75 ? 1 : 0);
 
-                if (!mergedData[cleanDate]) {
-                    mergedData[cleanDate] = { date: cleanDate, patients: 0, avgTemp: avgT, maxTemp: maxT, rh: null, wbgt: null };
-                } else {
-                    mergedData[cleanDate].avgTemp = avgT;
-                    mergedData[cleanDate].maxTemp = maxT;
-                }
-            });
-        }
+  INDICATOR_STATS = INDICATORS.map(ind=>{
+    const xs = DATASET.map(d=>d[ind.key]);
+    const r = pearson(xs, patients);
+    const reg = linreg(xs, patients);
+    const roc = rocAnalysis(xs, outcomeBin);
+    const above = DATASET.filter(d=>d[ind.key] >= roc.bestThr);
+    const avgPatientsAbove = above.length ? mean(above.map(d=>d.patients)) : NaN;
+    return { ...ind, r, r2:reg.r2, auc:roc.auc, bestThr:roc.bestThr, avgPatientsAbove, roc };
+  }).sort((a,b)=> b.auc - a.auc);
+}
 
-        function processHumData(rows) {
-            rows.forEach(row => {
-                const dateKey = row['일시'] || row['날짜'] || Object.values(row)[0];
-                const spotName = row['지점명'] || row['지점'];
-                if (!dateKey || (spotName && !spotName.includes('서울') && spotName !== '108')) return;
+function renderOverview(){
+  const cards = document.getElementById('overview-cards');
+  const byYear = {2024:[],2025:[],2026:[]};
+  DATASET.forEach(d=> byYear[d.year] && byYear[d.year].push(d));
+  cards.innerHTML = '';
+  [2024,2025,2026].forEach(y=>{
+    const arr = byYear[y];
+    const totalPatients = arr.reduce((a,b)=>a+b.patients,0);
+    const maxT = arr.length? Math.max(...arr.map(d=>d.maxTemp)) : NaN;
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `<h3>${y}년 (${arr.length}일)</h3>
+      <div class="big-num">${totalPatients}</div>
+      <div class="small-cap">누적 온열질환자 수</div>
+      <div style="margin-top:10px; color:var(--text-dim); font-size:13px;">기간 내 최고기온 ${isFinite(maxT)?maxT.toFixed(1):'-'}℃</div>`;
+    cards.appendChild(div);
+  });
 
-                const cleanDate = dateKey.trim();
-                const avgRh = parseFloat(row['평균 상대습도(%)']);
+  const missBox = document.getElementById('missing-report');
+  if(MISSING_DATES.length>0){
+    missBox.style.display='block';
+    missBox.innerHTML = `<b>⚠ 결측으로 분석에서 제외된 날짜 (${MISSING_DATES.length}일)</b><br>` +
+      MISSING_DATES.map(m=>`${m.date} (누락: ${m.fields.join(', ')})`).join(' · ');
+  } else {
+    missBox.style.display='block';
+    missBox.innerHTML = `✓ ${ANALYSIS_START}~${ANALYSIS_END} 기간, 3개 연도 모두 결측 없이 병합되었습니다. 총 ${DATASET.length}일 자료 확보.`;
+  }
+}
 
-                if (isNaN(avgRh)) return;
+function renderIndicatorTable(){
+  const tbody = document.querySelector('#indicator-table tbody');
+  tbody.innerHTML = '';
+  INDICATOR_STATS.forEach((s,i)=>{
+    const tr = document.createElement('tr');
+    if(i===0) tr.className='best';
+    tr.innerHTML = `
+      <td><span class="rank">${i+1}</span>${s.label}</td>
+      <td>${s.r.toFixed(3)}</td>
+      <td>${s.r2.toFixed(3)}</td>
+      <td>${s.auc.toFixed(3)}</td>
+      <td>${s.bestThr.toFixed(1)}</td>
+      <td>${isFinite(s.avgPatientsAbove)? s.avgPatientsAbove.toFixed(1)+'명' : '-'}</td>`;
+    tbody.appendChild(tr);
+  });
+}
 
-                if (!mergedData[cleanDate]) {
-                    mergedData[cleanDate] = { date: cleanDate, patients: 0, avgTemp: null, maxTemp: null, rh: avgRh, wbgt: null };
-                } else {
-                    mergedData[cleanDate].rh = avgRh;
-                }
-            });
-        }
+// ---------- 7. 차트 ----------
+Chart.defaults.color = '#8fa3b3';
+Chart.defaults.borderColor = '#26374a';
+Chart.defaults.font.family = "'Pretendard','Malgun Gothic',sans-serif";
+const CH = {};
 
-        function finalizeMetrics() {
-            const list = [];
-            Object.keys(mergedData).forEach(date => {
-                const month = parseInt(date.substring(5, 7), 10);
-                const day = parseInt(date.substring(8, 10), 10);
-                
-                const isTargetPeriod = (month === 5 && day >= 20) || (month === 6) || (month === 7 && day <= 15);
-                if (!isTargetPeriod) return;
+function renderCorrBarChart(){
+  const ctx = document.getElementById('chart-corr-bar');
+  const labels = INDICATOR_STATS.map(s=>s.label);
+  const data = INDICATOR_STATS.map(s=>Math.abs(s.r));
+  if(CH.corrBar) CH.corrBar.destroy();
+  CH.corrBar = new Chart(ctx, {
+    type:'bar',
+    data:{ labels, datasets:[{ data, backgroundColor:'#ff7a3d', borderRadius:4 }]},
+    options:{
+      indexAxis:'y', plugins:{legend:{display:false}},
+      scales:{ x:{ suggestedMax:1, grid:{color:'#1c2b3a'} }, y:{ grid:{display:false} } }
+    }
+  });
+}
 
-                const d = mergedData[date];
-                if (d.avgTemp !== null && d.rh !== null) {
-                    const T = d.avgTemp;
-                    const RH = d.rh;
-                    const Tw = T * Math.atan(0.151977 * Math.pow(RH + 8.313596, 0.5)) + Math.atan(T + RH) - Math.atan(RH - 1.676331) + 0.00391838 * Math.pow(RH, 1.5) * Math.atan(0.023101 * RH) - 4.686035;
-                    const calculatedWBGT = (0.7 * Tw) + (0.3 * T);
+function renderROCChart(){
+  const ctx = document.getElementById('chart-roc');
+  const top = INDICATOR_STATS.slice(0,3);
+  const colors = ['#ff3b3b','#ffb14e','#4ecbff'];
+  const datasets = top.map((s,i)=>({
+    label: s.label+` (AUC ${s.auc.toFixed(2)})`,
+    data: s.roc.points.map(p=>({x:p.fpr, y:p.tpr})),
+    borderColor: colors[i], backgroundColor:'transparent', showLine:true, pointRadius:0, tension:0.15
+  }));
+  datasets.push({ label:'무작위 기준선', data:[{x:0,y:0},{x:1,y:1}], borderColor:'#3a4b5c', borderDash:[4,4], pointRadius:0, showLine:true });
+  if(CH.roc) CH.roc.destroy();
+  CH.roc = new Chart(ctx, {
+    type:'scatter',
+    data:{ datasets },
+    options:{
+      scales:{
+        x:{ min:0, max:1, title:{display:true,text:'FPR (오탐율)'}, grid:{color:'#1c2b3a'} },
+        y:{ min:0, max:1, title:{display:true,text:'TPR (탐지율)'}, grid:{color:'#1c2b3a'} }
+      },
+      plugins:{ legend:{ position:'bottom', labels:{boxWidth:10,font:{size:10}} } }
+    }
+  });
+}
 
-                    d.wbgt = parseFloat(calculatedWBGT.toFixed(1));
-                    list.push(d);
-                }
-            });
-            return list.sort((a, b) => new Date(a.date) - new Date(b.date));
-        }
+function populateIndicatorSelects(){
+  ['ts-indicator','sc-indicator'].forEach(id=>{
+    const sel = document.getElementById(id);
+    sel.innerHTML = INDICATORS.map(ind=>`<option value="${ind.key}">${ind.label}</option>`).join('');
+  });
+  document.getElementById('ts-indicator').value = INDICATOR_STATS[0].key;
+  document.getElementById('sc-indicator').value = INDICATOR_STATS[0].key;
+}
 
-        let trendChart = null;
-        let scatterChart = null;
+function renderTimeseries(){
+  const yearSel = document.getElementById('ts-year').value;
+  const indKey = document.getElementById('ts-indicator').value;
+  const indLabel = INDICATORS.find(i=>i.key===indKey).label;
+  let data = DATASET;
+  if(yearSel !== 'all') data = data.filter(d=>d.year===parseInt(yearSel));
 
-        function renderDashboard(data) {
-            const totalPatients = data.reduce((sum, item) => sum + item.patients, 0);
-            const maxTemp = Math.max(...data.map(item => item.maxTemp || 0));
-            const maxWbgt = Math.max(...data.map(item => item.wbgt || 0));
+  const ctx = document.getElementById('chart-timeseries');
+  if(CH.ts) CH.ts.destroy();
+  CH.ts = new Chart(ctx, {
+    data:{
+      labels: data.map(d=>d.date.slice(5)),
+      datasets:[
+        { type:'line', label:indLabel, data:data.map(d=>d[indKey]), borderColor:'#ff7a3d', backgroundColor:'transparent', yAxisID:'y', tension:0.25, pointRadius:0, borderWidth:2 },
+        { type:'bar', label:'온열질환자 수(명)', data:data.map(d=>d.patients), backgroundColor:'rgba(78,203,255,0.55)', yAxisID:'y1', borderRadius:2 }
+      ]
+    },
+    options:{
+      interaction:{ mode:'index', intersect:false },
+      scales:{
+        x:{ grid:{display:false}, ticks:{ maxTicksLimit:14 } },
+        y:{ position:'left', title:{display:true,text:indLabel}, grid:{color:'#1c2b3a'} },
+        y1:{ position:'right', title:{display:true,text:'환자 수(명)'}, grid:{display:false}, beginAtZero:true }
+      },
+      plugins:{ legend:{ position:'bottom' } }
+    }
+  });
+}
 
-            document.getElementById('stat-patients').textContent = `${totalPatients}명`;
-            document.getElementById('stat-max-temp').textContent = `${maxTemp.toFixed(1)}℃`;
-            document.getElementById('stat-max-wbgt').textContent = `${maxWbgt.toFixed(1)}`;
-            document.getElementById('stat-match-days').textContent = `${data.length}일`;
+function renderScatter(){
+  const indKey = document.getElementById('sc-indicator').value;
+  const indLabel = INDICATORS.find(i=>i.key===indKey).label;
+  const xs = DATASET.map(d=>d[indKey]);
+  const ys = DATASET.map(d=>d.patients);
+  const reg = linreg(xs, ys);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const lineData = [ {x:minX, y:reg.slope*minX+reg.intercept}, {x:maxX, y:reg.slope*maxX+reg.intercept} ];
 
-            const labels = data.map(item => item.date);
-            const patientsDataset = data.map(item => item.patients);
-            const maxTempDataset = data.map(item => item.maxTemp);
-            const wbgtDataset = data.map(item => item.wbgt);
+  const colorByYear = {2024:'#ffb14e', 2025:'#ff3b3b', 2026:'#4ecbff'};
+  const ctx = document.getElementById('chart-scatter');
+  if(CH.scatter) CH.scatter.destroy();
+  CH.scatter = new Chart(ctx, {
+    type:'scatter',
+    data:{
+      datasets:[
+        ...[2024,2025,2026].map(y=>({
+          label:String(y),
+          data: DATASET.filter(d=>d.year===y).map(d=>({x:d[indKey], y:d.patients})),
+          backgroundColor: colorByYear[y], pointRadius:4
+        })),
+        { type:'line', label:`회귀선 (R²=${reg.r2.toFixed(2)})`, data:lineData, borderColor:'#fff', borderDash:[5,4], borderWidth:1.5, pointRadius:0 }
+      ]
+    },
+    options:{
+      scales:{
+        x:{ title:{display:true,text:indLabel}, grid:{color:'#1c2b3a'} },
+        y:{ title:{display:true,text:'온열질환자 수(명)'}, beginAtZero:true, grid:{color:'#1c2b3a'} }
+      },
+      plugins:{ legend:{ position:'bottom' } }
+    }
+  });
+}
 
-            if (trendChart) trendChart.destroy();
-            const ctx1 = document.getElementById('trendChart').getContext('2d');
-            trendChart = new Chart(ctx1, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: '온열질환자 수 (명)',
-                            data: patientsDataset,
-                            borderColor: 'rgb(239, 68, 68)',
-                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                            yAxisID: 'y-patients',
-                            type: 'bar',
-                            order: 1
-                        },
-                        {
-                            label: '일 최고기온 (℃)',
-                            data: maxTempDataset,
-                            borderColor: 'rgb(249, 115, 22)',
-                            tension: 0.2,
-                            yAxisID: 'y-weather',
-                            order: 2
-                        },
-                        {
-                            label: '일 평균 WBGT',
-                            data: wbgtDataset,
-                            borderColor: 'rgb(16, 185, 129)',
-                            tension: 0.2,
-                            yAxisID: 'y-weather',
-                            order: 3
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        'y-patients': {
-                            type: 'linear',
-                            position: 'right',
-                            title: { display: true, text: '환자 수 (명)' },
-                            grid: { drawOnChartArea: false }
-                        },
-                        'y-weather': {
-                            type: 'linear',
-                            position: 'left',
-                            title: { display: true, text: '기온 및 WBGT' }
-                        }
-                    }
-                }
-            });
+// ---------- 8. 예측 시뮬레이터 ----------
+let REGRESSION_MODEL = null; // {coeffs:[b0,b1,...], keys:[...]}
+function buildPredictionModel(){
+  const keys = ['maxTemp','avgTemp','wbgtMax','wbgtAvg','avgRH','windSpeed','solarRad'];
+  const X = DATASET.map(d=> keys.map(k=>d[k]));
+  const y = DATASET.map(d=> d.patients);
+  const coeffs = multiLinReg(X, y);
+  REGRESSION_MODEL = { coeffs, keys };
+}
 
-            const scatterDataTemp = data.map(item => ({ x: item.maxTemp, y: item.patients }));
-            const scatterDataWbgt = data.map(item => ({ x: item.wbgt, y: item.patients }));
+function predict(){
+  const maxT = parseFloat(document.getElementById('in-maxT').value);
+  const avgT = parseFloat(document.getElementById('in-avgT').value);
+  const rh   = parseFloat(document.getElementById('in-rh').value);
+  const wind = parseFloat(document.getElementById('in-wind').value);
+  const solar= parseFloat(document.getElementById('in-solar').value);
+  const wbgtMax = wbgtEstimate(maxT, rh);
+  const wbgtAvg = wbgtEstimate(avgT, rh);
 
-            if (scatterChart) scatterChart.destroy();
-            const ctx2 = document.getElementById('scatterChart').getContext('2d');
-            scatterChart = new Chart(ctx2, {
-                type: 'scatter',
-                data: {
-                    datasets: [
-                        {
-                            label: '최고기온 vs 환자수',
-                            data: scatterDataTemp,
-                            backgroundColor: 'rgba(249, 115, 22, 0.7)'
-                        },
-                        {
-                            label: 'WBGT vs 환자수',
-                            data: scatterDataWbgt,
-                            backgroundColor: 'rgba(16, 185, 129, 0.7)'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        x: { title: { display: true, text: '기후 수치 (℃ / WBGT)' } },
-                        y: { title: { display: true, text: '환자 발생수 (명)' } }
-                    }
-                }
-            });
-        }
-    </script>
+  const featureMap = { maxTemp:maxT, avgTemp:avgT, wbgtMax, wbgtAvg, avgRH:rh, windSpeed:wind, solarRad:solar };
+  const { coeffs, keys } = REGRESSION_MODEL;
+  let pred = coeffs[0];
+  keys.forEach((k,i)=> pred += coeffs[i+1]*featureMap[k]);
+  pred = Math.max(0, pred);
+
+  const topInd = INDICATOR_STATS[0];
+  const topVal = featureMap[topInd.key];
+  const isOver = topVal >= topInd.bestThr;
+
+  let riskLabel, riskColor;
+  if(pred >= percentile(DATASET.map(d=>d.patients),90)){ riskLabel='매우 위험'; riskColor='var(--heat3)'; }
+  else if(pred >= percentile(DATASET.map(d=>d.patients),75)){ riskLabel='위험'; riskColor='var(--heat2)'; }
+  else if(pred >= percentile(DATASET.map(d=>d.patients),50)){ riskLabel='주의'; riskColor='var(--heat1)'; }
+  else { riskLabel='관심'; riskColor='var(--good)'; }
+
+  const box = document.getElementById('predict-result');
+  box.style.display = 'flex';
+  box.innerHTML = `
+    <div>
+      <div class="small-cap">예상 온열질환자 수(서울, 다중회귀)</div>
+      <div class="big-num">${pred.toFixed(1)}<span style="font-size:16px;color:var(--text-dim);"> 명/일</span></div>
+    </div>
+    <div class="risk-badge" style="background:${riskColor}; color:#111;">${riskLabel}</div>
+    <div style="font-size:13px; color:var(--text-dim);">
+      추정 WBGT: 최고 ${wbgtMax.toFixed(1)}℃ / 평균 ${wbgtAvg.toFixed(1)}℃<br>
+      최상위 판별지표(${topInd.label}) 값 ${topVal.toFixed(1)} → 최적임계값 ${topInd.bestThr.toFixed(1)} ${isOver?'<b style="color:var(--heat2)">이상 (다발생 패턴)</b>':'미만'}
+    </div>`;
+}
+
+// ---------- 9. 초기화 ----------
+async function init(){
+  document.getElementById('loading-banner').style.display='block';
+  try{
+    await loadAll();
+  }catch(e){
+    console.error(e);
+    return; // 에러 배너는 이미 표시됨
+  }
+  document.getElementById('loading-banner').style.display='none';
+
+  if(DATASET.length === 0){
+    const box = document.getElementById('error-banner');
+    box.style.display='block';
+    box.innerHTML = `<h3>⚠ 분석 가능한 날짜가 없습니다</h3><p>모든 날짜가 결측 처리되었습니다. 원본 파일 내용을 확인해 주세요.</p>`;
+    return;
+  }
+
+  document.getElementById('app-main').style.display='block';
+  document.getElementById('status-strip').lastElementChild && null;
+
+  runAnalysis();
+  renderOverview();
+  renderIndicatorTable();
+  renderCorrBarChart();
+  renderROCChart();
+  populateIndicatorSelects();
+  renderTimeseries();
+  renderScatter();
+  buildPredictionModel();
+
+  document.getElementById('ts-year').addEventListener('change', renderTimeseries);
+  document.getElementById('ts-indicator').addEventListener('change', renderTimeseries);
+  document.getElementById('sc-indicator').addEventListener('change', renderScatter);
+  document.getElementById('btn-predict').addEventListener('click', predict);
+
+  // 데이터 충분성 안내 문구를 실제 표본 수로 업데이트
+  const note = document.getElementById('data-sufficiency-note');
+  note.innerHTML = note.innerHTML.replace('총 약 170일', `총 ${DATASET.length}일`);
+}
+
+init();
+</script>
 </body>
 </html>
