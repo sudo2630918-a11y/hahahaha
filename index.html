@@ -10,6 +10,7 @@
 </head>
 <body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
 
+    <!-- Header -->
     <header class="bg-gradient-to-r from-red-500 to-orange-500 text-white py-6 px-8 shadow-md">
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             <div>
@@ -20,51 +21,45 @@
         </div>
     </header>
 
+    <!-- Main Content -->
     <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-8">
         
+        <!-- Error & Status Container -->
         <div id="status-container" class="mb-6 hidden">
             <div id="status-box" class="p-4 rounded-lg shadow-inner">
-                <p id="status-message" class="font-medium"></p>
+                <p id="status-message" class="font-medium whitespace-pre-line"></p>
             </div>
         </div>
 
+        <!-- Quick Start Guide & File Check -->
         <section class="bg-white p-6 rounded-xl shadow-md mb-8">
-            <h2 class="text-xl font-semibold mb-4 text-gray-700">📂 데이터 파일 상태 분석 및 로드</h2>
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">📂 데이터 파일 상태 분석 및 로드 (영문 매칭 버전)</h2>
             <p class="text-sm text-gray-500 mb-4">
-                GitHub Pages 또는 로컬 환경에서 실행할 때, 아래 리스트에 기재된 모든 CSV 파일이 <strong>index.html과 동일한 폴더</strong>에 존재해야 합니다.
+                오류 해결을 위해 파일명을 영문으로 변경하여 적용했습니다. 파일들이 <strong>index.html과 동일한 폴더(GitHub 저장소)</strong>에 정상 업로드되었는지 확인해 주세요.
             </p>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                 <div class="p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <span class="font-bold text-red-700">1. 온열질환 데이터 (3개)</span>
+                    <span class="font-bold text-red-700">1. 온열질환 데이터 (patients_*.csv)</span>
                     <ul class="list-disc list-inside mt-1 text-gray-600">
-                        <li>24온열질환.csv</li>
-                        <li>25온열질환.csv</li>
-                        <li>26온열질환.csv</li>
+                        <li>patients_24.csv (24온열질환)</li>
+                        <li>patients_25.csv (25온열질환)</li>
+                        <li>patients_26.csv (26온열질환)</li>
                     </ul>
                 </div>
                 <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <span class="font-bold text-blue-700">2. 기온 데이터 (9개)</span>
+                    <span class="font-bold text-blue-700">2. 기온 데이터 (temp_*.csv)</span>
                     <ul class="list-disc list-inside mt-1 text-gray-600">
-                        <li>24_515_613기온.csv</li>
-                        <li>24_614_713기온.csv</li>
-                        <li>24_2기온.csv</li>
-                        <li>25_515_613기온.csv</li>
-                        <li>25_614_713기온.csv</li>
-                        <li>25_2기온.csv</li>
-                        <li>26_515_613기온.csv</li>
-                        <li>26_614_713기온.csv</li>
-                        <li>26_2기온.csv</li>
+                        <li>temp_24_1.csv / temp_24_2.csv / temp_24_3.csv</li>
+                        <li>temp_25_1.csv / temp_25_2.csv / temp_25_3.csv</li>
+                        <li>temp_26_1.csv / temp_26_2.csv / temp_26_3.csv</li>
                     </ul>
                 </div>
                 <div class="p-3 bg-teal-50 border border-teal-200 rounded-lg">
-                    <span class="font-bold text-teal-700">3. 습도 및 일사량 데이터 (6개)</span>
+                    <span class="font-bold text-teal-700">3. 습도 데이터 (hum_*.csv)</span>
                     <ul class="list-disc list-inside mt-1 text-gray-600">
-                        <li>24_515_614습도.csv</li>
-                        <li>24_615_715습도.csv</li>
-                        <li>25_515_614습도.csv</li>
-                        <li>25_615_715습도.csv</li>
-                        <li>26_515_614습도.csv</li>
-                        <li>26_615_715습도.csv</li>
+                        <li>hum_24_1.csv / hum_24_2.csv</li>
+                        <li>hum_25_1.csv / hum_25_2.csv</li>
+                        <li>hum_26_1.csv / hum_26_2.csv</li>
                     </ul>
                 </div>
             </div>
@@ -75,8 +70,8 @@
             </div>
         </section>
 
+        <!-- Dashboard Section -->
         <section id="dashboard" class="hidden space-y-8">
-            
             <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div class="bg-white p-6 rounded-xl shadow-md border-t-4 border-red-500">
                     <h3 class="text-xs font-semibold text-gray-400 uppercase">총 누적 온열질환자 (서울)</h3>
@@ -91,8 +86,8 @@
                     <p id="stat-max-wbgt" class="text-3xl font-bold text-gray-800 mt-2">0.0</p>
                 </div>
                 <div class="bg-white p-6 rounded-xl shadow-md border-t-4 border-teal-500">
-                    <h3 class="text-xs font-semibold text-gray-400 uppercase">온열질환 위험 임계 기온</h3>
-                    <p id="stat-threshold" class="text-3xl font-bold text-gray-800 mt-2">31.2℃</p>
+                    <h3 class="text-xs font-semibold text-gray-400 uppercase">온열위험 수준</h3>
+                    <p id="stat-threshold" class="text-3xl font-bold text-gray-800 mt-2">경계/심각</p>
                 </div>
             </div>
 
@@ -104,51 +99,37 @@
                     </div>
                 </div>
                 <div class="bg-white p-6 rounded-xl shadow-md">
-                    <h3 class="text-lg font-semibold text-gray-700 mb-4">📊 지표별 온열질환 발생 빈도 및 상관관계 (상점도)</h3>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-4">📊 지표별 온열질환 발생 빈도 (산점도)</h3>
                     <div class="relative h-96">
                         <canvas id="scatterChart"></canvas>
                     </div>
                 </div>
             </div>
-
-            <div class="bg-white p-6 rounded-xl shadow-md">
-                <h3 class="text-lg font-semibold text-gray-700 mb-4">🔍 서울 온열질환 임계값 연구 보고서 요약</h3>
-                <div class="prose max-w-none text-sm text-gray-600 space-y-3">
-                    <p>
-                        본 예측 모델 시각화는 <strong>서울 지역</strong>의 기온 데이터와 습구흑구온도(WBGT) 데이터를 융합하여 온열질환자 발생의 임계 가동범위를 탐색합니다.
-                    </p>
-                    <ul class="list-disc list-inside space-y-1">
-                        <li><strong>일 평균/최고 기온 분석:</strong> 서울의 여름철 최고기온이 <span class="font-bold text-red-600">31℃~33℃</span> 구간에 진입할 때 온열질환자가 급증하는 양상을 보입니다.</li>
-                        <li><strong>WBGT 적용 우수성:</strong> 단순 기온뿐만 아니라 습도와 일사량이 반영된 <strong>일 최고 WBGT 지표가 28 이상</strong>일 때, 기온이 상대적으로 낮더라도 다량의 환자가 속출하여 습도가 미치는 복합적 요인이 큼을 검증하였습니다.</li>
-                    </ul>
-                </div>
-            </div>
         </section>
-
     </main>
 
     <footer class="bg-gray-800 text-gray-400 py-6 px-8 text-center text-xs">
-        <p>© 2026 서울 온열질환 기후데이터 융합 프로젝트. All Rights Reserved.</p>
+        <p>© 2026 서울 온열질환 기후데이터 융합 프로젝트.</p>
     </footer>
 
     <script>
+        // 영문화된 파일명 리스트
         const fileList = {
-            patients: ["24온열질환.csv", "25온열질환.csv", "26온열질환.csv"],
+            patients: ["patients_24.csv", "patients_25.csv", "patients_26.csv"],
             temps: [
-                "24_515_613기온.csv", "24_614_713기온.csv", "24_2기온.csv",
-                "25_515_613기온.csv", "25_614_713기온.csv", "25_2기온.csv",
-                "26_515_613기온.csv", "26_614_713기온.csv", "26_2기온.csv"
+                "temp_24_1.csv", "temp_24_2.csv", "temp_24_3.csv",
+                "temp_25_1.csv", "temp_25_2.csv", "temp_25_3.csv",
+                "temp_26_1.csv", "temp_26_2.csv", "temp_26_3.csv"
             ],
             hums: [
-                "24_515_614습도.csv", "24_615_715습도.csv",
-                "25_515_614습도.csv", "25_615_715습도.csv",
-                "26_515_614습도.csv", "26_615_715습도.csv"
+                "hum_24_1.csv", "hum_24_2.csv",
+                "hum_25_1.csv", "hum_25_2.csv",
+                "hum_26_1.csv", "hum_26_2.csv"
             ]
         };
 
-        let mergedData = {}; // Key: 'YYYY-MM-DD'
+        let mergedData = {};
 
-        // UI Logic
         const btnLoad = document.getElementById('btn-load');
         const statusContainer = document.getElementById('status-container');
         const statusBox = document.getElementById('status-box');
@@ -172,10 +153,10 @@
         async function fetchAndParseCSV(fileName) {
             try {
                 const response = await fetch(fileName);
-                if (!response.ok) throw new Error(`네트워크 응답 오류 (${response.status})`);
+                if (!response.ok) {
+                    throw new Error(`[HTTP ${response.status}] 파일을 찾을 수 없거나 불러오지 못했습니다.`);
+                }
                 const arrayBuffer = await response.arrayBuffer();
-                
-                // cp949 인코딩 처리 적용
                 const decoder = new TextDecoder('euc-kr'); 
                 const text = decoder.decode(arrayBuffer);
 
@@ -188,22 +169,20 @@
                     });
                 });
             } catch (error) {
-                throw new Error(`[${fileName}] 불러오기 실패: ${error.message}`);
+                throw new Error(`'${fileName}' 로딩 실패\n사유: ${error.message}`);
             }
         }
 
         async function startAnalysis() {
-            showStatus("데이터 분석 중... 각 CSV 파일의 한글 깨짐 방지 디코딩 및 데이터 병합을 시도합니다.", "info");
+            showStatus("서버에서 영문 CSV 데이터를 안전하게 가져오는 중입니다...", "info");
             mergedData = {}; 
 
             try {
-                // 1. 서울 온열질환 데이터 수집 및 병합
+                // 데이터 로드
                 for (const file of fileList.patients) {
                     const data = await fetchAndParseCSV(file);
                     processPatientData(data);
                 }
-
-                // 2. 서울 기온 및 습도 연계 분석 데이터 병합
                 for (const file of fileList.temps) {
                     const data = await fetchAndParseCSV(file);
                     processTempData(data);
@@ -213,47 +192,47 @@
                     processHumData(data);
                 }
 
-                // 데이터 필터링 (5월 20일 ~ 7월 15일 범위 한정 및 WBGT 연산 수행)
-                const finalAnalyticData = finalizeMetrics();
+                const finalData = finalizeMetrics();
 
-                if (finalAnalyticData.length === 0) {
-                    throw new Error("서울 기후 데이터 매칭 결과가 존재하지 않습니다. 날짜 포맷 및 파일 누락 상태를 확인하세요.");
+                if (finalData.length === 0) {
+                    throw new Error("서울에 매칭되는 온습도 기온 필터 데이터가 존재하지 않습니다.");
                 }
 
-                showStatus("분석 성공! 서울 지역 온열 예측 시각화 대시보드가 성공적으로 로드되었습니다.", "success");
+                showStatus("분석 성공! 그래프와 실시간 데이터 분석 패널을 출력합니다.", "success");
                 dashboard.classList.remove('hidden');
-                
-                renderDashboard(finalAnalyticData);
+                renderDashboard(finalData);
 
             } catch (error) {
-                showStatus(`🚨 에러 발생: ${error.message}\n\n[해결방법] 모든 파일의 한글명에 자음/모음 분리가 없는지 검증하시고, index.html과 한 폴더에 있는지 혹은 GitHub Pages 브라우저 보안 정책상 CORS 에러가 발생하지 않았는지 로컬 웹서버 구동 상태를 확인해 주세요.`, "error");
+                showStatus(
+                    `🚨 파일 로드 에러!\n\n${error.message}\n\n` +
+                    `[체크리스트]\n` +
+                    `1. 깃허브 Repository에 변경된 영문 파일명(예: patients_24.csv)이 정확히 올라갔는지 확인해 주세요.\n` +
+                    `2. 대소문자(.CSV vs .csv)가 정확히 일치하는지 확인해 주세요.\n` +
+                    `3. 업로드 직후인 경우 GitHub Pages 서버 반영까지 약 1~2분의 딜레이가 생길 수 있으니 잠시 후 새로고침해 주세요.`, 
+                    "error"
+                );
                 console.error(error);
             }
         }
 
-        // 서울 데이터 처리 (온열질환자)
         function processPatientData(rows) {
             rows.forEach(row => {
-                // 날짜 컬럼 및 서울 지역 환자수 취합
                 const dateKey = row['증상발생일'] || row['날짜'] || Object.values(row)[0];
                 if (!dateKey || !dateKey.includes('-')) return;
-
                 const cleanDate = dateKey.trim();
                 const seoulPatients = parseInt(row['서울'] || 0, 10);
 
                 if (!mergedData[cleanDate]) {
-                    mergedData[cleanDate] = { date: cleanDate, patients: 0, avgTemp: null, maxTemp: null, rh: null, sr: null, wbgt: null };
+                    mergedData[cleanDate] = { date: cleanDate, patients: 0, avgTemp: null, maxTemp: null, rh: null, wbgt: null };
                 }
                 mergedData[cleanDate].patients += isNaN(seoulPatients) ? 0 : seoulPatients;
             });
         }
 
-        // 서울 기온 데이터 파싱
         function processTempData(rows) {
             rows.forEach(row => {
                 const dateKey = row['일시'] || row['날짜'] || Object.values(row)[0];
                 const spotName = row['지점명'] || row['지점'];
-                // 서울 지점 번호는 보통 108번입니다.
                 if (!dateKey || (spotName && !spotName.includes('서울') && spotName !== '108')) return;
 
                 const cleanDate = dateKey.trim();
@@ -263,7 +242,7 @@
                 if (isNaN(avgT) || isNaN(maxT)) return;
 
                 if (!mergedData[cleanDate]) {
-                    mergedData[cleanDate] = { date: cleanDate, patients: 0, avgTemp: avgT, maxTemp: maxT, rh: null, sr: null, wbgt: null };
+                    mergedData[cleanDate] = { date: cleanDate, patients: 0, avgTemp: avgT, maxTemp: maxT, rh: null, wbgt: null };
                 } else {
                     mergedData[cleanDate].avgTemp = avgT;
                     mergedData[cleanDate].maxTemp = maxT;
@@ -271,7 +250,6 @@
             });
         }
 
-        // 서울 습도 & 일사 데이터 파싱 및 WBGT 적용
         function processHumData(rows) {
             rows.forEach(row => {
                 const dateKey = row['일시'] || row['날짜'] || Object.values(row)[0];
@@ -280,24 +258,20 @@
 
                 const cleanDate = dateKey.trim();
                 const avgRh = parseFloat(row['평균 상대습도(%)']);
-                const sumSr = parseFloat(row['합계 일사량(MJ/m2)']) || 0; // 일사량은 없을 시 0 기본값
 
                 if (isNaN(avgRh)) return;
 
                 if (!mergedData[cleanDate]) {
-                    mergedData[cleanDate] = { date: cleanDate, patients: 0, avgTemp: null, maxTemp: null, rh: avgRh, sr: sumSr, wbgt: null };
+                    mergedData[cleanDate] = { date: cleanDate, patients: 0, avgTemp: null, maxTemp: null, rh: avgRh, wbgt: null };
                 } else {
                     mergedData[cleanDate].rh = avgRh;
-                    mergedData[cleanDate].sr = sumSr;
                 }
             });
         }
 
-        // 기상청 WBGT 간이 계산 근사식 적용 및 데이터 필터링
         function finalizeMetrics() {
             const list = [];
             Object.keys(mergedData).forEach(date => {
-                // 서울 5월 20일 ~ 7월 15일 데이터 필터링
                 const month = parseInt(date.substring(5, 7), 10);
                 const day = parseInt(date.substring(8, 10), 10);
                 
@@ -306,15 +280,11 @@
 
                 const d = mergedData[date];
                 if (d.avgTemp !== null && d.rh !== null) {
-                    // 기상청 WBGT 약식 산정식 활용
-                    // WBGT = 0.567 * Ta + 0.393 * ea + 3.94 (ea: 증기압)
-                    // 또는 표준 온습도 기반 간이 습구온도(Tw) 근사식을 통한 WBGT 추정
                     const T = d.avgTemp;
                     const RH = d.rh;
-                    
-                    // Simple wet-bulb approximation
+                    // 간이 습구온도 수식 적용
                     const Tw = T * Math.atan(0.151977 * Math.pow(RH + 8.313596, 0.5)) + Math.atan(T + RH) - Math.atan(RH - 1.676331) + 0.00391838 * Math.pow(RH, 1.5) * Math.atan(0.023101 * RH) - 4.686035;
-                    const calculatedWBGT = (0.7 * Tw) + (0.3 * T); // 간이 옥외 WBGT 보정
+                    const calculatedWBGT = (0.7 * Tw) + (0.3 * T);
 
                     d.wbgt = parseFloat(calculatedWBGT.toFixed(1));
                     list.push(d);
@@ -323,12 +293,10 @@
             return list.sort((a, b) => new Date(a.date) - new Date(b.date));
         }
 
-        // 대시보드 렌더링 함수
         let trendChart = null;
         let scatterChart = null;
 
         function renderDashboard(data) {
-            // 통계 계산
             const totalPatients = data.reduce((sum, item) => sum + item.patients, 0);
             const maxTemp = Math.max(...data.map(item => item.maxTemp || 0));
             const maxWbgt = Math.max(...data.map(item => item.wbgt || 0));
@@ -337,7 +305,6 @@
             document.getElementById('stat-max-temp').textContent = `${maxTemp.toFixed(1)}℃`;
             document.getElementById('stat-max-wbgt').textContent = `${maxWbgt.toFixed(1)}`;
 
-            // 차트 1: 선그래프 데이터 구축
             const labels = data.map(item => item.date);
             const patientsDataset = data.map(item => item.patients);
             const maxTempDataset = data.map(item => item.maxTemp);
@@ -396,7 +363,6 @@
                 }
             });
 
-            // 차트 2: 산점도 분석 데이터 구축
             const scatterDataTemp = data.map(item => ({ x: item.maxTemp, y: item.patients }));
             const scatterDataWbgt = data.map(item => ({ x: item.wbgt, y: item.patients }));
 
@@ -422,12 +388,8 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
-                        x: {
-                            title: { display: true, text: '기후 지표 수치 (℃ / WBGT)' }
-                        },
-                        y: {
-                            title: { display: true, text: '일별 환자 발생수 (명)' }
-                        }
+                        x: { title: { display: true, text: '기후 수치 (℃ / WBGT)' } },
+                        y: { title: { display: true, text: '환자 발생수 (명)' } }
                     }
                 }
             });
